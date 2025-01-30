@@ -11,7 +11,12 @@ npm run dev
 
 ## Features
 
-- [ ] 
+- [ ]
 - [ ] GLTF Scene Loading
 - [ ] BVH Acceleration
 - [ ] Multiple Importance Sampling (MIS)
+
+## Libraries
+
+- TypeGPU
+- @loaders.gl/gltf
