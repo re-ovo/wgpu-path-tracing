@@ -2,6 +2,7 @@ import { GLTFPostprocessed } from '@loaders.gl/gltf';
 import tgpu, { TgpuRoot } from 'typegpu';
 import ptShaderSource from '../shader/pt.wgsl?raw';
 import { loadGLTF } from './loader';
+import { prepareScene } from './gpu';
 
 export async function setupRenderer(canvas: HTMLCanvasElement) {
   const root = await tgpu.init();
@@ -11,6 +12,7 @@ export async function setupRenderer(canvas: HTMLCanvasElement) {
   }
 
   const gltf = await loadGLTF('/models/cornell.glb');
+  const sceneData = prepareScene(gltf);
 
   const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
   context.configure({
@@ -18,13 +20,13 @@ export async function setupRenderer(canvas: HTMLCanvasElement) {
     format: presentationFormat,
   });
 
-  render(root, context, gltf);
+  render(root, context, sceneData);
 }
 
 function render(
   root: TgpuRoot,
   context: GPUCanvasContext,
-  gltf: GLTFPostprocessed,
+  sceneData: SceneData,
 ) {
   const device = root.device;
 

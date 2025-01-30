@@ -78,10 +78,88 @@ export function prepareScene(gltf: GLTFPostprocessed): SceneData {
 
   for (const mesh of gltf.meshes) {
     for (const primitive of mesh.primitives) {
-      const triangle = primitive.attributes.position.value;
-      triangles.push(triangle);
+      console.log(primitive.attributes);
+      const position = primitive.attributes['POSITION'];
+      const normal = primitive.attributes['NORMAL'];
+      const uv = primitive.attributes['TEXCOORD_0'];
+      const index = primitive.indices;
+      console.log(position, normal, uv, index);
+      const triangles = buildTriangles(
+        position.value as Float32Array,
+        normal.value as Float32Array,
+        uv.value as Float32Array,
+        index?.value as Uint16Array,
+      );
+      console.log(triangles);
     }
   }
 
   return { triangles };
+}
+
+function buildTriangles(
+  position: Float32Array,
+  normal: Float32Array,
+  uv: Float32Array,
+  index: Uint16Array,
+) {
+  const triangles: TriangleType[] = [];
+  if (index) {
+    for (let i = 0; i < index.length; i += 3) {
+      const triangle: TriangleType = {
+        v0: d.vec3f(
+          position[index[i]],
+          position[index[i + 1]],
+          position[index[i + 2]],
+        ),
+        v1: d.vec3f(
+          position[index[i]],
+          position[index[i + 1]],
+          position[index[i + 2]],
+        ),
+        v2: d.vec3f(
+          position[index[i]],
+          position[index[i + 1]],
+          position[index[i + 2]],
+        ),
+        n0: d.vec3f(
+          normal[index[i]],
+          normal[index[i + 1]],
+          normal[index[i + 2]],
+        ),
+        n1: d.vec3f(
+          normal[index[i]],
+          normal[index[i + 1]],
+          normal[index[i + 2]],
+        ),
+        n2: d.vec3f(
+          normal[index[i]],
+          normal[index[i + 1]],
+          normal[index[i + 2]],
+        ),
+        uv0: d.vec2f(uv[index[i]], uv[index[i + 1]]),
+        uv1: d.vec2f(uv[index[i]], uv[index[i + 1]]),
+        uv2: d.vec2f(uv[index[i]], uv[index[i + 1]]),
+        materialIndex: 0,
+      };
+      triangles.push(triangle);
+    }
+  } else {
+    for (let i = 0; i < position.length; i += 3) {
+      const triangle: TriangleType = {
+        v0: d.vec3f(position[i], position[i + 1], position[i + 2]),
+        v1: d.vec3f(position[i], position[i + 1], position[i + 2]),
+        v2: d.vec3f(position[i], position[i + 1], position[i + 2]),
+        n0: d.vec3f(normal[i], normal[i + 1], normal[i + 2]),
+        n1: d.vec3f(normal[i], normal[i + 1], normal[i + 2]),
+        n2: d.vec3f(normal[i], normal[i + 1], normal[i + 2]),
+        uv0: d.vec2f(uv[i], uv[i + 1]),
+        uv1: d.vec2f(uv[i], uv[i + 1]),
+        uv2: d.vec2f(uv[i], uv[i + 1]),
+        materialIndex: 0,
+      };
+      triangles.push(triangle);
+    }
+  }
+  return triangles;
 }
