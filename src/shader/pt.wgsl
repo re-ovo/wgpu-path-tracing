@@ -1,6 +1,6 @@
 // 常量
 const PI = 3.14159265359;
-const EPSILON = 0.001;
+const EPSILON = 1e-4;
 const MAX_BOUNCES = 8;
 
 // 结构体定义
@@ -150,13 +150,51 @@ fn sceneIntersect(ray: Ray) -> HitInfo {
     return closest;
 }
 
-// BRDF采样
-fn sampleBRDF(normal: vec3f, material: Material) -> vec3f {
-    let r = randomInUnitSphere();
-    return normalize(normal + r);
+// 改进的随机数生成
+fn randomCosineDirection() -> vec3f {
+    let r1 = rand();
+    let r2 = rand();
+    let z = sqrt(1.0 - r2);
+    let phi = 2.0 * PI * r1;
+    let x = cos(phi) * sqrt(r2);
+    let y = sin(phi) * sqrt(r2);
+    return vec3f(x, y, z);
 }
 
-// 路径追踪主函数
+// 改进的BRDF采样
+fn sampleBRDF(normal: vec3f, material: Material, hitPoint: vec3f) -> vec3f {
+    var tangent = vec3f(1.0, 0.0, 0.0);
+    if (abs(dot(normal, tangent)) > 0.9) {
+        tangent = vec3f(0.0, 1.0, 0.0);
+    }
+    
+    let bitangent = normalize(cross(normal, tangent));
+    tangent = normalize(cross(bitangent, normal));
+    
+    // 构建TBN矩阵
+    let tbn = mat3x3f(tangent, bitangent, normal);
+    
+    // 根据材质属性选择采样策略
+    if (material.metallic > 0.5) {
+        // 金属材质使用镜面反射
+        let reflected = reflect(normalize(-hitPoint), normal);
+        let scattered = randomCosineDirection();
+        return normalize(mix(reflected, tbn * scattered, material.roughness));
+    } else if (material.transmission > 0.5) {
+        // 透明材质使用折射
+        let eta = select(material.ior, 1.0 / material.ior, dot(normal, -hitPoint) > 0.0);
+        var refracted = refract(normalize(-hitPoint), normal, eta);
+        if (length(refracted) > 0.0) {
+            return normalize(refracted);
+        }
+        return reflect(normalize(-hitPoint), normal);
+    }
+    
+    // 漫反射材质
+    return tbn * randomCosineDirection();
+}
+
+// 改进的路径追踪主函数
 fn trace(ray: Ray) -> vec3f {
     var throughput = vec3f(1.0);
     var result = vec3f(0.0);
@@ -166,36 +204,58 @@ fn trace(ray: Ray) -> vec3f {
         let hit = sceneIntersect(currentRay);
         
         if (hit.t < 0.0) {
-            // 未击中，返回环境光
-            result += throughput * vec3f(0.3);  // 增加环境光强度
+            // 使用基于HDR的环境光照
+            let t = 0.5 * (currentRay.direction.y + 1.0);
+            let skyColor = mix(
+                vec3f(0.5, 0.7, 1.0), // 天空颜色
+                vec3f(0.2, 0.2, 0.2), // 地平线颜色
+                t
+            );
+            result += throughput * skyColor;
             break;
         }
         
         let material = materials[hit.materialIndex];
         
-        // 添加自发光
-        result += throughput * material.emission * material.emissiveStrength;
+        // 添加自发光贡献
+        if (length(material.emission) > 0.0) {
+            result += throughput * material.emission * material.emissiveStrength;
+            // 发光物体直接结束路径
+            if (material.emissiveStrength > 0.0) {
+                break;
+            }
+        }
         
-        // 俄罗斯轮盘赌 - 调整概率
-        var p = max(max(material.baseColor.r, material.baseColor.g), material.baseColor.b);
-        p = max(p, 0.25);  // 设置最小继续概率为0.25
-        if (rand() > p) {
+        // 俄罗斯轮盘赌
+        let p = max(max(throughput.r, throughput.g), throughput.b);
+        if (bounce > 2 && rand() > p) {
             break;
         }
         throughput /= p;
         
-        // 生成新光线
-        let newDir = sampleBRDF(hit.normal, material);
+        // 生成新光线方向
+        let newDir = sampleBRDF(hit.normal, material, currentRay.direction);
         currentRay = Ray(hit.position + hit.normal * EPSILON, newDir);
         
         // 更新throughput
-        throughput *= material.baseColor;
+        let cosTheta = max(dot(newDir, hit.normal), 0.0);
+        throughput *= material.baseColor * cosTheta;
+        
+        // 处理金属度
+        if (material.metallic > 0.0) {
+            throughput *= mix(vec3f(1.0), material.baseColor, material.metallic);
+        }
+        
+        // 处理透明度
+        if (material.transmission > 0.0) {
+            throughput *= vec3f(1.0 - material.roughness);
+        }
     }
     
     return result;
 }
 
-// 计算着色器入口
+// 改进的主计算着色器
 @compute @workgroup_size(16, 16)
 fn main(@builtin(global_invocation_id) id: vec3u) {
     let dims = vec2u(camera.width, camera.height);
@@ -205,7 +265,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 
     initRNG(id.xy, camera.frameIndex);
     
-    // 生成光线
+    // 抗锯齿采样
     let pixel = vec2f(f32(id.x) + rand(), f32(id.y) + rand());
     let uv = (pixel / vec2f(dims)) * 2.0 - 1.0;
     
@@ -217,15 +277,14 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     
     let ray = Ray(camera.position, rayDir);
     var color = trace(ray);
-    
-    // 累积多帧结果
-    let bufferIndex = id.y * camera.width + id.x;  // 使用简单的线性索引
+  
+    let bufferIndex = id.y * camera.width + id.x;
     if (camera.frameIndex > 0u) {
-        let prevColor = outputBuffer[bufferIndex].rgb;
+        // 累积采样
+        let prevColor = outputBuffer[bufferIndex];
         let t = 1.0 / f32(camera.frameIndex + 1u);
         color = mix(prevColor, color, t);
     }
 
-    // 输出颜色
     outputBuffer[bufferIndex] = color;
 }

@@ -3,13 +3,13 @@ import {
   makeShaderDataDefinitions,
   makeStructuredView,
 } from 'webgpu-utils';
-import ptShaderSource from '../shader/pt.wgsl?raw';
+import ptShaderSource from '../shader/pt_debug.wgsl?raw';
 import { prepareScene, SceneData, CameraCPU } from './gpu';
 import { loadGLTF } from './loader';
 import { mat4, vec3 } from 'wgpu-matrix';
 import blitShaderSource from '../shader/blit.wgsl?raw';
 
-const MAX_FRAMES = 32;
+const MAX_FRAMES = -1;
 
 class Renderer {
   private device: GPUDevice;
@@ -50,8 +50,8 @@ class Renderer {
 
   private setupCamera() {
     this.camera = {
-      position: vec3.create(0, 1.0, -2.5),
-      forward: vec3.create(0, 0, 1),
+      position: vec3.create(0, 1.0, 2.5),
+      forward: vec3.create(0, 0, -1),
       right: vec3.create(1, 0, 0),
       up: vec3.create(0, 1, 0),
       fov: Math.PI / 2,
@@ -308,9 +308,9 @@ class Renderer {
       this.renderFrame();
       this.animationFrameId = requestAnimationFrame(animate);
 
-      // if (this.frameIndex > MAX_FRAMES) {
-      //   this.stop();
-      // }
+      if (MAX_FRAMES !== -1 && this.frameIndex > MAX_FRAMES) {
+        this.stop();
+      }
     };
     animate();
   }
@@ -351,7 +351,7 @@ export async function setupRenderer(canvas: HTMLCanvasElement) {
     throw new Error('Failed to create WebGPU context');
   }
 
-  const gltf = await loadGLTF('/models/cornell.glb');
+  const gltf = await loadGLTF('/models/transform.glb');
   const sceneData = prepareScene(gltf);
 
   const presentationFormat = navigator.gpu.getPreferredCanvasFormat();

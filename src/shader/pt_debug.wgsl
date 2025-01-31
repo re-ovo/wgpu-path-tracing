@@ -151,8 +151,17 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     let bufferIndex = id.y * camera.width + id.x;
     
     if (hit.t > 0.0) {
-        // 如果击中物体，显示法线颜色
-        outputBuffer[bufferIndex] = normalToColor(hit.normal);
+        // 计算视线方向与法线的点积，判断是否是背面
+        let viewDir = -rayDir;  // 视线方向是光线方向的反方向
+        let facingFront = dot(viewDir, hit.normal) > 0.0;
+        
+        if (facingFront) {
+            // 正面显示法线颜色
+            outputBuffer[bufferIndex] = normalToColor(hit.normal);
+        } else {
+            // 背面显示红色
+            outputBuffer[bufferIndex] = vec3f(1.0, 0.0, 0.0);
+        }
     } else {
         // 如果没有击中，显示背景色
         outputBuffer[bufferIndex] = vec3f(0.0, 0.0, 0.0);
