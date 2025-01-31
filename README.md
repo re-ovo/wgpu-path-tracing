@@ -16,6 +16,12 @@ npm run dev
 - [ ] BVH Acceleration
 - [ ] Multiple Importance Sampling (MIS)
 
+## GLTF Extensions Supported
+
+- KHR_materials_ior
+- KHR_materials_transmission
+- KHR_materials_emissive_strength
+
 ## Libraries
 
 - TypeGPU

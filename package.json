@@ -17,7 +17,8 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwindcss": "^4.0.1",
-    "typegpu": "^0.3.2"
+    "webgpu-utils": "^1.9.3",
+    "wgpu-matrix": "^3.3.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.19.0",

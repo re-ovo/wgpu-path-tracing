@@ -1,100 +1,79 @@
-import { GLTFPostprocessed } from '@loaders.gl/gltf';
-import * as d from 'typegpu/data';
+import { GLTFMaterialPostprocessed, GLTFPostprocessed } from '@loaders.gl/gltf';
+import { vec2, Vec2, vec3, Vec3 } from 'wgpu-matrix';
 
-export const AABB = d.struct({
-  min: d.vec3f,
-  max: d.vec3f,
-});
+export interface MaterialCPU {
+  baseColor: Vec3;
+  metallic: number;
+  roughness: number;
+  emission: Vec3;
+  emissiveStrength: number;
+  ior: number;
+  transmission: number;
+}
 
-export const BVHNode = d.struct({
-  aabb: AABB,
-  left: d.i32,
-  right: d.i32,
-  first_triangle: d.u32,
-  triangle_count: d.u32,
-});
-
-// Texture Atlas Entry - 记录每个纹理在图集中的位置和大小
-export const TextureAtlasEntry = d.struct({
-  offset: d.vec2f, // 在图集中的起始位置（标准化坐标 0-1）
-  scale: d.vec2f, // 在图集中的缩放（标准化坐标 0-1）
-});
-
-// Material properties
-export const Material = d.struct({
-  baseColor: d.vec3f,
-  emission: d.vec3f,
-  metallic: d.f32,
-  roughness: d.f32,
-  ior: d.f32, // Index of refraction
-  transmission: d.f32,
-  // 纹理索引，-1表示不使用该纹理
-  baseColorTexId: d.i32,
-  metallicRoughnessTexId: d.i32,
-  normalTexId: d.i32,
-  emissionTexId: d.i32,
-});
-
-// Triangle structure with vertices and material index
-export const Triangle = d.struct({
-  v0: d.vec3f,
-  v1: d.vec3f,
-  v2: d.vec3f,
-  n0: d.vec3f, // vertex normals
-  n1: d.vec3f,
-  n2: d.vec3f,
-  uv0: d.vec2f, // texture coordinates
-  uv1: d.vec2f,
-  uv2: d.vec2f,
-  materialIndex: d.u32,
-});
-
-export type TriangleType = d.Infer<typeof Triangle>;
+export interface TriangleCPU {
+  v0: Vec3;
+  v1: Vec3;
+  v2: Vec3;
+  n0: Vec3;
+  n1: Vec3;
+  n2: Vec3;
+  uv0: Vec2;
+  uv1: Vec2;
+  uv2: Vec2;
+  materialIndex: number;
+}
 
 // Camera parameters
-export const Camera = d.struct({
-  position: d.vec3f,
-  forward: d.vec3f,
-  right: d.vec3f,
-  up: d.vec3f,
-  fov: d.f32,
-  aspect: d.f32,
-});
-
-// 渲染全局参数
-export const RenderParams = d.struct({
-  atlasSize: d.vec2f, // 纹理图集的大小
-  maxTextureCount: d.u32, // 最大纹理数量
-  frameIndex: d.u32, // 当前帧索引（用于累积）
-  // ... 其他渲染参数
-});
+export interface CameraCPU {
+  position: Vec3;
+  forward: Vec3;
+  right: Vec3;
+  up: Vec3;
+  fov: number;
+  aspect: number;
+  width: number;
+  height: number;
+  frameIndex: number;
+}
 
 export interface SceneData {
-  triangles: TriangleType[];
+  triangles: TriangleCPU[];
+  materials: MaterialCPU[];
 }
 
 export function prepareScene(gltf: GLTFPostprocessed): SceneData {
-  const triangles: TriangleType[] = [];
+  const allTriangles: TriangleCPU[] = [];
+  const allMaterials: MaterialCPU[] = [];
 
   for (const mesh of gltf.meshes) {
     for (const primitive of mesh.primitives) {
-      console.log(primitive.attributes);
       const position = primitive.attributes['POSITION'];
       const normal = primitive.attributes['NORMAL'];
       const uv = primitive.attributes['TEXCOORD_0'];
       const index = primitive.indices;
-      console.log(position, normal, uv, index);
+
+      // build triangles
       const triangles = buildTriangles(
         position.value as Float32Array,
         normal.value as Float32Array,
         uv.value as Float32Array,
         index?.value as Uint16Array,
       );
-      console.log(triangles);
+
+      // build material
+      const material = buildMaterial(primitive.material);
+      allMaterials.push(material);
+
+      // apply material to triangles
+      triangles.forEach((triangle) => {
+        triangle.materialIndex = allMaterials.length - 1;
+      });
+      allTriangles.push(...triangles);
     }
   }
 
-  return { triangles };
+  return { triangles: allTriangles, materials: allMaterials };
 }
 
 function buildTriangles(
@@ -103,63 +82,92 @@ function buildTriangles(
   uv: Float32Array,
   index: Uint16Array,
 ) {
-  const triangles: TriangleType[] = [];
+  if (index instanceof Uint32Array) {
+    throw new Error('Uint32Array is not supported yet');
+  }
+
+  const triangles: TriangleCPU[] = [];
   if (index) {
     for (let i = 0; i < index.length; i += 3) {
-      const triangle: TriangleType = {
-        v0: d.vec3f(
-          position[index[i]],
-          position[index[i + 1]],
-          position[index[i + 2]],
-        ),
-        v1: d.vec3f(
-          position[index[i]],
-          position[index[i + 1]],
-          position[index[i + 2]],
-        ),
-        v2: d.vec3f(
-          position[index[i]],
-          position[index[i + 1]],
-          position[index[i + 2]],
-        ),
-        n0: d.vec3f(
-          normal[index[i]],
-          normal[index[i + 1]],
-          normal[index[i + 2]],
-        ),
-        n1: d.vec3f(
-          normal[index[i]],
-          normal[index[i + 1]],
-          normal[index[i + 2]],
-        ),
-        n2: d.vec3f(
-          normal[index[i]],
-          normal[index[i + 1]],
-          normal[index[i + 2]],
-        ),
-        uv0: d.vec2f(uv[index[i]], uv[index[i + 1]]),
-        uv1: d.vec2f(uv[index[i]], uv[index[i + 1]]),
-        uv2: d.vec2f(uv[index[i]], uv[index[i + 1]]),
+      const i0 = index[i] * 3;
+      const i1 = index[i + 1] * 3;
+      const i2 = index[i + 2] * 3;
+
+      const uv0 = index[i] * 2;
+      const uv1 = index[i + 1] * 2;
+      const uv2 = index[i + 2] * 2;
+
+      const triangle: TriangleCPU = {
+        v0: vec3.create(position[i0], position[i0 + 1], position[i0 + 2]),
+        v1: vec3.create(position[i1], position[i1 + 1], position[i1 + 2]),
+        v2: vec3.create(position[i2], position[i2 + 1], position[i2 + 2]),
+        n0: vec3.create(normal[i0], normal[i0 + 1], normal[i0 + 2]),
+        n1: vec3.create(normal[i1], normal[i1 + 1], normal[i1 + 2]),
+        n2: vec3.create(normal[i2], normal[i2 + 1], normal[i2 + 2]),
+        uv0: vec2.create(uv[uv0], uv[uv0 + 1]),
+        uv1: vec2.create(uv[uv1], uv[uv1 + 1]),
+        uv2: vec2.create(uv[uv2], uv[uv2 + 1]),
         materialIndex: 0,
       };
       triangles.push(triangle);
     }
   } else {
-    for (let i = 0; i < position.length; i += 3) {
-      const triangle: TriangleType = {
-        v0: d.vec3f(position[i], position[i + 1], position[i + 2]),
-        v1: d.vec3f(position[i], position[i + 1], position[i + 2]),
-        v2: d.vec3f(position[i], position[i + 1], position[i + 2]),
-        n0: d.vec3f(normal[i], normal[i + 1], normal[i + 2]),
-        n1: d.vec3f(normal[i], normal[i + 1], normal[i + 2]),
-        n2: d.vec3f(normal[i], normal[i + 1], normal[i + 2]),
-        uv0: d.vec2f(uv[i], uv[i + 1]),
-        uv1: d.vec2f(uv[i], uv[i + 1]),
-        uv2: d.vec2f(uv[i], uv[i + 1]),
+    for (let i = 0; i < position.length; i += 9) {
+      const triangle: TriangleCPU = {
+        v0: vec3.create(position[i], position[i + 1], position[i + 2]),
+        v1: vec3.create(position[i + 3], position[i + 4], position[i + 5]),
+        v2: vec3.create(position[i + 6], position[i + 7], position[i + 8]),
+        n0: vec3.create(normal[i], normal[i + 1], normal[i + 2]),
+        n1: vec3.create(normal[i + 3], normal[i + 4], normal[i + 5]),
+        n2: vec3.create(normal[i + 6], normal[i + 7], normal[i + 8]),
+        uv0: vec2.create(uv[(i / 3) * 2], uv[(i / 3) * 2 + 1]),
+        uv1: vec2.create(uv[(i / 3 + 1) * 2], uv[(i / 3 + 1) * 2 + 1]),
+        uv2: vec2.create(uv[(i / 3 + 2) * 2], uv[(i / 3 + 2) * 2 + 1]),
         materialIndex: 0,
       };
       triangles.push(triangle);
     }
   }
   return triangles;
+}
+
+function buildMaterial(
+  material: GLTFMaterialPostprocessed | undefined,
+): MaterialCPU {
+  if (!material) {
+    return {
+      baseColor: vec3.create(1.0, 1.0, 1.0),
+      emission: vec3.create(0.0, 0.0, 0.0),
+      emissiveStrength: 0.0,
+      metallic: 0.0,
+      roughness: 0.1,
+      ior: 1.5,
+      transmission: 0.0,
+    };
+  }
+
+  const baseColor = material.pbrMetallicRoughness?.baseColorFactor ?? [
+    1.0, 1.0, 1.0, 1.0,
+  ];
+  const metallic = material.pbrMetallicRoughness?.metallicFactor ?? 0.0;
+  const roughness = material.pbrMetallicRoughness?.roughnessFactor ?? 0.5;
+
+  const emissive = material.emissiveFactor ?? [0.0, 0.0, 0.0];
+  const emissiveStrength =
+    material.extensions?.KHR_materials_emissive_strength?.emissiveStrength ??
+    1.0;
+
+  const ior = material.extensions?.KHR_materials_ior?.ior ?? 1.5;
+  const transmission =
+    material.extensions?.KHR_materials_transmission?.transmissionFactor ?? 0.0;
+
+  return {
+    baseColor: vec3.create(baseColor[0], baseColor[1], baseColor[2]),
+    metallic,
+    roughness,
+    emission: vec3.create(emissive[0], emissive[1], emissive[2]),
+    emissiveStrength,
+    ior,
+    transmission,
+  };
 }
