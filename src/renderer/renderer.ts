@@ -3,7 +3,7 @@ import {
   makeShaderDataDefinitions,
   makeStructuredView,
 } from 'webgpu-utils';
-import ptShaderSource from '../shader/pt_debug.wgsl?raw';
+import ptShaderSource from '../shader/pt.wgsl?raw';
 import { prepareScene, SceneData, CameraCPU } from './gpu';
 import { loadGLTF } from './loader';
 import { mat4, vec3 } from 'wgpu-matrix';

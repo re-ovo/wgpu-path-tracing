@@ -66,17 +66,14 @@ export function prepareScene(gltf: GLTFPostprocessed): SceneData {
   for (const node of gltf.nodes) {
     const localMatrix = extractNodeMatrix(node);
     console.log(node.name, localMatrix);
-    let worldMatrix = mat4.clone(localMatrix);
+    const worldMatrix = mat4.clone(localMatrix);
 
     // Traverse up the parent chain to accumulate transformations
     let currentNode = node;
     while (parentMap.has(currentNode)) {
       const parent = parentMap.get(currentNode)!;
       const parentMatrix = extractNodeMatrix(parent);
-      // Change multiplication order: worldMatrix = parentMatrix * localMatrix
-      const newWorldMatrix = mat4.create();
-      mat4.mul(newWorldMatrix, parentMatrix, worldMatrix);
-      worldMatrix = newWorldMatrix;
+      mat4.mul(parentMatrix, worldMatrix, worldMatrix);
       currentNode = parent;
     }
 
@@ -87,18 +84,26 @@ export function prepareScene(gltf: GLTFPostprocessed): SceneData {
     processNode(node, allTriangles, allMaterials, worldMatrices.get(node)!);
   }
 
+  console.log('triangles', allTriangles.length);
+  console.log('materials', allMaterials.length);
+
   return { triangles: allTriangles, materials: allMaterials };
 }
 
 function extractNodeMatrix(node: GLTFNodePostprocessed): Mat4 {
-  let matrix = node.matrix ? mat4.create(...node.matrix) : mat4.identity();
+  const matrix = node.matrix ? mat4.create(...node.matrix) : mat4.identity();
 
   if (!node.matrix) {
-    // Apply transformations in Scale -> Rotation -> Translation order
-    if (node.scale) {
-      mat4.scale(
+    // TRS order
+    // The order should be T * R * S for TRS transformation
+    if (node.translation) {
+      mat4.translate(
         matrix,
-        vec3.create(node.scale[0], node.scale[1], node.scale[2]),
+        vec3.create(
+          node.translation[0],
+          node.translation[1],
+          node.translation[2],
+        ),
         matrix,
       );
     }
@@ -112,19 +117,13 @@ function extractNodeMatrix(node: GLTFNodePostprocessed): Mat4 {
           node.rotation[3],
         ),
       );
-      const newMatrix = mat4.create();
-      mat4.mul(newMatrix, rotationMat, matrix);
-      matrix = newMatrix;
+      mat4.mul(matrix, rotationMat, matrix);
     }
 
-    if (node.translation) {
-      mat4.translate(
+    if (node.scale) {
+      mat4.scale(
         matrix,
-        vec3.create(
-          node.translation[0],
-          node.translation[1],
-          node.translation[2],
-        ),
+        vec3.create(node.scale[0], node.scale[1], node.scale[2]),
         matrix,
       );
     }
