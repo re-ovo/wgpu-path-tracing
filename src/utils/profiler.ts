@@ -4,6 +4,7 @@ export class WebGPUProfiler {
   private queryBufferMap: Map<string, GPUBuffer>;
   private resultBufferMap: Map<string, GPUBuffer>;
   private queryResults: Map<string, number>;
+  private statsProxy: { [key: string]: number };
 
   constructor(device: GPUDevice) {
     this.device = device;
@@ -11,6 +12,34 @@ export class WebGPUProfiler {
     this.queryBufferMap = new Map();
     this.resultBufferMap = new Map();
     this.queryResults = new Map();
+    this.statsProxy = new Proxy(
+      {},
+      {
+        get: (target, prop) => {
+          if (typeof prop === 'string') {
+            return this.queryResults.get(prop) ?? 0;
+          }
+          return undefined;
+        },
+        set: () => false,
+        has: (target, prop) => {
+          return typeof prop === 'string' && this.queryResults.has(prop);
+        },
+        ownKeys: () => {
+          return Array.from(this.queryResults.keys());
+        },
+        getOwnPropertyDescriptor: (target, prop) => {
+          if (typeof prop === 'string' && this.queryResults.has(prop)) {
+            return {
+              enumerable: true,
+              configurable: true,
+              value: this.queryResults.get(prop),
+            };
+          }
+          return undefined;
+        },
+      },
+    );
   }
 
   private createQuerySetAndBuffer(label: string) {
@@ -106,7 +135,7 @@ export class WebGPUProfiler {
     this.queryBufferMap.clear();
   }
 
-  public getStats() {
-    return Object.fromEntries(this.queryResults);
+  public getStats(): { [key: string]: number } {
+    return this.statsProxy;
   }
 }

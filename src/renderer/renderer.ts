@@ -9,6 +9,7 @@ import { loadGLTF } from './loader';
 import { mat4, vec3 } from 'wgpu-matrix';
 import blitShaderSource from '../shader/blit.wgsl?raw';
 import { WebGPUProfiler } from '../utils/profiler';
+import { Pane } from 'tweakpane';
 
 const MAX_FRAMES = -1;
 
@@ -19,6 +20,7 @@ class Renderer {
   private frameIndex: number = 0;
 
   private profiler?: WebGPUProfiler;
+  private statsPane: Pane;
 
   // Pipelines
   private pathTracePipeline!: GPUComputePipeline;
@@ -53,6 +55,48 @@ class Renderer {
     this.createPipelines();
     this.createBuffers();
     this.createBindGroups();
+
+    this.statsPane = new Pane({
+      title: 'WebGPU PathTracing',
+    });
+
+    if (this.profiler) {
+      const stats = this.profiler.getStats();
+      const folder = this.statsPane.addFolder({
+        title: 'Profiler',
+      });
+      folder.addBinding(stats, 'path-trace-pass', {
+        label: 'Path Trace Pass (ms)',
+        view: 'text',
+        readonly: true,
+      });
+      folder.addBinding(stats, 'path-trace-pass', {
+        readonly: true,
+        view: 'graph',
+        min: 0,
+        label: 'Path Trace',
+      });
+      folder.addBinding(stats, 'blit-pass', {
+        readonly: true,
+        view: 'text',
+        label: 'Blit Pass (ms)',
+      });
+      folder.addBinding(stats, 'blit-pass', {
+        readonly: true,
+        view: 'graph',
+        min: 0,
+        label: 'Blit',
+      });
+    }
+
+    this.statsPane
+      .addButton({
+        title: 'Open',
+        label: 'Github',
+      })
+      .on('click', () => {
+        window.open('https://github.com/re-ovo/wgpu-path-tracing', '_blank');
+      });
   }
 
   private setupCamera() {
@@ -334,6 +378,18 @@ class Renderer {
     }
   }
 
+  public destroy() {
+    this.stop();
+
+    this.cameraBuffer.destroy();
+    this.outputBuffer.destroy();
+    this.trianglesBuffer.destroy();
+    this.materialsBuffer.destroy();
+
+    this.statsPane.dispose();
+    this.profiler?.destroy();
+  }
+
   public resize(width: number, height: number) {
     // Implement resize handling
     this.context.canvas.width = width;
@@ -372,7 +428,7 @@ export async function setupRenderer(canvas: HTMLCanvasElement) {
     throw new Error('Failed to create WebGPU context');
   }
 
-  const gltf = await loadGLTF('/models/transform.glb');
+  const gltf = await loadGLTF('/models/cornell.glb');
   const sceneData = prepareScene(gltf);
 
   const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
