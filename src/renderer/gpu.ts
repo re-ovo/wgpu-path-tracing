@@ -65,7 +65,6 @@ export function prepareScene(gltf: GLTFPostprocessed): SceneData {
   const worldMatrices: Map<GLTFNodePostprocessed, Mat4> = new Map();
   for (const node of gltf.nodes) {
     const localMatrix = extractNodeMatrix(node);
-    console.log(node.name, localMatrix);
     const worldMatrix = mat4.clone(localMatrix);
 
     // Traverse up the parent chain to accumulate transformations
@@ -84,8 +83,7 @@ export function prepareScene(gltf: GLTFPostprocessed): SceneData {
     processNode(node, allTriangles, allMaterials, worldMatrices.get(node)!);
   }
 
-  console.log('triangles', allTriangles.length);
-  console.log('materials', allMaterials.length);
+  console.log(`${gltf.nodes.length} nodes, ${allTriangles.length} triangles`);
 
   return { triangles: allTriangles, materials: allMaterials };
 }

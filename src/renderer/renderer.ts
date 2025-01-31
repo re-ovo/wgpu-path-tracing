@@ -8,6 +8,7 @@ import { prepareScene, SceneData, CameraCPU } from './gpu';
 import { loadGLTF } from './loader';
 import { mat4, vec3 } from 'wgpu-matrix';
 import blitShaderSource from '../shader/blit.wgsl?raw';
+import { WebGPUProfiler } from '../utils/profiler';
 
 const MAX_FRAMES = -1;
 
@@ -16,6 +17,8 @@ class Renderer {
   private context: GPUCanvasContext;
   private sceneData: SceneData;
   private frameIndex: number = 0;
+
+  private profiler?: WebGPUProfiler;
 
   // Pipelines
   private pathTracePipeline!: GPUComputePipeline;
@@ -41,6 +44,10 @@ class Renderer {
     this.device = device;
     this.context = context;
     this.sceneData = sceneData;
+
+    if (device.features.has('timestamp-query')) {
+      this.profiler = new WebGPUProfiler(device);
+    }
 
     this.setupCamera();
     this.createPipelines();
@@ -273,7 +280,9 @@ class Renderer {
     const commandEncoder = this.device.createCommandEncoder();
 
     // Compute pass
-    const computePass = commandEncoder.beginComputePass();
+    const computePass = commandEncoder.beginComputePass({
+      timestampWrites: this.profiler?.getTimestampWrites('path-trace-pass'),
+    });
     computePass.setPipeline(this.pathTracePipeline);
     computePass.setBindGroup(0, this.computeBindGroup);
     computePass.dispatchWorkgroups(
@@ -281,6 +290,7 @@ class Renderer {
       Math.ceil(this.context.canvas.height / 16),
     );
     computePass.end();
+    this.profiler?.resolveResults(commandEncoder, 'path-trace-pass');
 
     // Render pass
     const renderPass = commandEncoder.beginRenderPass({
@@ -292,14 +302,16 @@ class Renderer {
           storeOp: 'store',
         },
       ],
+      timestampWrites: this.profiler?.getTimestampWrites('blit-pass'),
     });
-
     renderPass.setPipeline(this.blitPipeline);
     renderPass.setBindGroup(0, this.blitBindGroup);
     renderPass.draw(4, 1, 0, 0);
     renderPass.end();
+    this.profiler?.resolveResults(commandEncoder, 'blit-pass');
 
     this.device.queue.submit([commandEncoder.finish()]);
+    this.profiler?.onSubmit();
     this.frameIndex++;
   }
 
@@ -340,12 +352,21 @@ class Renderer {
 }
 
 export async function setupRenderer(canvas: HTMLCanvasElement) {
-  const adapter = await navigator.gpu.requestAdapter();
+  const adapter = await navigator.gpu.requestAdapter({
+    powerPreference: 'high-performance',
+  });
   if (!adapter) {
     throw new Error('Failed to request WebGPU adapter');
   }
 
-  const device = await adapter.requestDevice();
+  let device: GPUDevice;
+  if (adapter.features.has('timestamp-query')) {
+    device = await adapter.requestDevice({
+      requiredFeatures: ['timestamp-query'], // enable timestamp query
+    });
+  } else {
+    device = await adapter.requestDevice();
+  }
   const context = canvas.getContext('webgpu');
   if (!context) {
     throw new Error('Failed to create WebGPU context');
