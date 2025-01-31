@@ -6,10 +6,10 @@ import {
 import ptShaderSource from '../shader/pt.wgsl?raw';
 import { prepareScene, SceneData, CameraCPU } from './gpu';
 import { loadGLTF } from './loader';
-import { vec3 } from 'wgpu-matrix';
+import { mat4, vec3 } from 'wgpu-matrix';
 import blitShaderSource from '../shader/blit.wgsl?raw';
 
-const MAX_FRAMES = 24;
+const MAX_FRAMES = 32;
 
 class Renderer {
   private device: GPUDevice;
@@ -30,7 +30,7 @@ class Renderer {
   private blitBindGroup!: GPUBindGroup;
 
   // Camera
-  private camera!: CameraCPU;
+  public camera!: CameraCPU;
   private animationFrameId: number | null = null;
 
   constructor(
@@ -51,15 +51,58 @@ class Renderer {
   private setupCamera() {
     this.camera = {
       position: vec3.create(0, 1.0, -2.5),
-      forward: vec3.create(0, -0.3, 1),
+      forward: vec3.create(0, 0, 1),
       right: vec3.create(1, 0, 0),
       up: vec3.create(0, 1, 0),
-      fov: 45,
+      fov: Math.PI / 2,
       aspect: this.context.canvas.width / this.context.canvas.height,
       width: this.context.canvas.width,
       height: this.context.canvas.height,
       frameIndex: 0,
     };
+  }
+
+  public moveCamera(forward: number, right: number, up: number) {
+    // Update camera position
+    const movement = vec3.create(
+      right * this.camera.right[0] +
+        forward * this.camera.forward[0] +
+        up * this.camera.up[0],
+      right * this.camera.right[1] +
+        forward * this.camera.forward[1] +
+        up * this.camera.up[1],
+      right * this.camera.right[2] +
+        forward * this.camera.forward[2] +
+        up * this.camera.up[2],
+    );
+
+    vec3.add(this.camera.position, movement, this.camera.position);
+
+    this.resetOutputBuffer();
+  }
+
+  public rotateCamera(yaw: number, pitch: number) {
+    // 创建一个组合旋转矩阵
+    const rotation = mat4.identity();
+    mat4.rotateY(rotation, yaw, rotation);
+    mat4.rotateX(rotation, pitch, rotation);
+
+    // 应用旋转到前向向量
+    vec3.transformMat4(this.camera.forward, rotation, this.camera.forward);
+    vec3.normalize(this.camera.forward, this.camera.forward);
+
+    // 重新计算右向量
+    vec3.cross(this.camera.forward, vec3.create(0, 1, 0), this.camera.right);
+    vec3.normalize(this.camera.right, this.camera.right);
+
+    // 重新计算上向量
+    vec3.cross(this.camera.right, this.camera.forward, this.camera.up);
+    vec3.normalize(this.camera.up, this.camera.up);
+
+    console.log(rotation);
+    console.log(this.camera.forward, this.camera.right, this.camera.up);
+
+    this.resetOutputBuffer();
   }
 
   private createPipelines() {
@@ -116,7 +159,10 @@ class Renderer {
     this.outputBuffer = this.device.createBuffer({
       label: 'path trace result',
       size: this.context.canvas.width * this.context.canvas.height * 16, // vec3f per pixel, 4 bytes per float (aligned)
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+      usage:
+        GPUBufferUsage.STORAGE |
+        GPUBufferUsage.COPY_SRC |
+        GPUBufferUsage.COPY_DST,
     });
 
     // Create scene data buffers
@@ -163,6 +209,18 @@ class Renderer {
       0,
       materialsView.arrayBuffer,
     );
+  }
+
+  private resetOutputBuffer() {
+    this.device.queue.writeBuffer(
+      this.outputBuffer,
+      0,
+      new ArrayBuffer(
+        this.context.canvas.width * this.context.canvas.height * 16,
+      ),
+    );
+    this.frameIndex = 0;
+    this.camera.frameIndex = 0;
   }
 
   private createBindGroups() {
@@ -250,9 +308,9 @@ class Renderer {
       this.renderFrame();
       this.animationFrameId = requestAnimationFrame(animate);
 
-      if (this.camera.frameIndex > MAX_FRAMES) {
-        this.stop();
-      }
+      // if (this.frameIndex > MAX_FRAMES) {
+      //   this.stop();
+      // }
     };
     animate();
   }
@@ -310,6 +368,28 @@ export async function setupRenderer(canvas: HTMLCanvasElement) {
     const width = canvas.clientWidth;
     const height = canvas.clientHeight;
     renderer.resize(width, height);
+  });
+
+  // Handle keyboard input
+  window.addEventListener('keydown', (event) => {
+    const key = event.key;
+    if (key === 'w') {
+      renderer.moveCamera(0.1, 0, 0);
+    } else if (key === 's') {
+      renderer.moveCamera(-0.1, 0, 0);
+    } else if (key === 'a') {
+      renderer.moveCamera(0, -0.1, 0);
+    } else if (key === 'd') {
+      renderer.moveCamera(0, 0.1, 0);
+    } else if (key === 'q') {
+      renderer.moveCamera(0, 0, 0.1);
+    } else if (key === 'e') {
+      renderer.moveCamera(0, 0, -0.1);
+    } else if (key === 'r') {
+      renderer.rotateCamera(0.1, 0);
+    } else if (key === 'f') {
+      renderer.rotateCamera(-0.1, 0);
+    }
   });
 
   return renderer;

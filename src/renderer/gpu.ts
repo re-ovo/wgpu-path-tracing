@@ -1,5 +1,9 @@
-import { GLTFMaterialPostprocessed, GLTFPostprocessed } from '@loaders.gl/gltf';
-import { vec2, Vec2, vec3, Vec3 } from 'wgpu-matrix';
+import {
+  GLTFMaterialPostprocessed,
+  GLTFNodePostprocessed,
+  GLTFPostprocessed,
+} from '@loaders.gl/gltf';
+import { Mat4, mat4, quat, vec2, Vec2, vec3, Vec3 } from 'wgpu-matrix';
 
 export interface MaterialCPU {
   baseColor: Vec3;
@@ -46,21 +50,139 @@ export function prepareScene(gltf: GLTFPostprocessed): SceneData {
   const allTriangles: TriangleCPU[] = [];
   const allMaterials: MaterialCPU[] = [];
 
-  console.log(gltf.nodes);
+  // build parent map
+  const parentMap: Map<GLTFNodePostprocessed, GLTFNodePostprocessed> =
+    new Map();
+  for (const node of gltf.nodes) {
+    if (node.children) {
+      for (const child of node.children) {
+        parentMap.set(child, node);
+      }
+    }
+  }
 
-  for (const mesh of gltf.meshes) {
-    for (const primitive of mesh.primitives) {
+  // Calculate world matrices for each node
+  const worldMatrices: Map<GLTFNodePostprocessed, Mat4> = new Map();
+  for (const node of gltf.nodes) {
+    const localMatrix = extractNodeMatrix(node);
+    console.log(node.name, localMatrix);
+    let worldMatrix = mat4.clone(localMatrix);
+
+    // Traverse up the parent chain to accumulate transformations
+    let currentNode = node;
+    while (parentMap.has(currentNode)) {
+      const parent = parentMap.get(currentNode)!;
+      const parentMatrix = extractNodeMatrix(parent);
+      // Change multiplication order: worldMatrix = parentMatrix * localMatrix
+      const newWorldMatrix = mat4.create();
+      mat4.mul(newWorldMatrix, parentMatrix, worldMatrix);
+      worldMatrix = newWorldMatrix;
+      currentNode = parent;
+    }
+
+    worldMatrices.set(node, worldMatrix);
+  }
+
+  for (const node of gltf.nodes) {
+    processNode(node, allTriangles, allMaterials, worldMatrices.get(node)!);
+  }
+
+  return { triangles: allTriangles, materials: allMaterials };
+}
+
+function extractNodeMatrix(node: GLTFNodePostprocessed): Mat4 {
+  let matrix = node.matrix ? mat4.create(...node.matrix) : mat4.identity();
+
+  if (!node.matrix) {
+    // Apply transformations in Scale -> Rotation -> Translation order
+    if (node.scale) {
+      mat4.scale(
+        matrix,
+        vec3.create(node.scale[0], node.scale[1], node.scale[2]),
+        matrix,
+      );
+    }
+
+    if (node.rotation) {
+      const rotationMat = mat4.fromQuat(
+        quat.create(
+          node.rotation[0],
+          node.rotation[1],
+          node.rotation[2],
+          node.rotation[3],
+        ),
+      );
+      const newMatrix = mat4.create();
+      mat4.mul(newMatrix, rotationMat, matrix);
+      matrix = newMatrix;
+    }
+
+    if (node.translation) {
+      mat4.translate(
+        matrix,
+        vec3.create(
+          node.translation[0],
+          node.translation[1],
+          node.translation[2],
+        ),
+        matrix,
+      );
+    }
+  }
+
+  return matrix;
+}
+
+function processNode(
+  node: GLTFNodePostprocessed,
+  allTriangles: TriangleCPU[],
+  allMaterials: MaterialCPU[],
+  worldMatrix: Mat4,
+) {
+  if (node.mesh) {
+    for (const primitive of node.mesh.primitives) {
       const position = primitive.attributes['POSITION'];
       const normal = primitive.attributes['NORMAL'];
       const uv = primitive.attributes['TEXCOORD_0'];
       const index = primitive.indices;
 
-      console.log('mesh', mesh);
+      // Transform positions and normals by world matrix
+      const transformedPosition = new Float32Array(position.value.length);
+      const transformedNormal = new Float32Array(normal.value.length);
 
-      // build triangles
+      for (let i = 0; i < position.value.length; i += 3) {
+        const pos = vec3.transformMat4(
+          vec3.create(
+            position.value[i],
+            position.value[i + 1],
+            position.value[i + 2],
+          ),
+          worldMatrix,
+        );
+        transformedPosition[i] = pos[0];
+        transformedPosition[i + 1] = pos[1];
+        transformedPosition[i + 2] = pos[2];
+
+        // Transform normal with inverse transpose of world matrix
+        const normalMatrix = mat4.transpose(mat4.inverse(worldMatrix));
+        const norm = vec3.transformMat4(
+          vec3.create(
+            normal.value[i],
+            normal.value[i + 1],
+            normal.value[i + 2],
+          ),
+          normalMatrix,
+        );
+        vec3.normalize(norm, norm);
+        transformedNormal[i] = norm[0];
+        transformedNormal[i + 1] = norm[1];
+        transformedNormal[i + 2] = norm[2];
+      }
+
+      // build triangles with transformed vertices
       const triangles = buildTriangles(
-        position.value as Float32Array,
-        normal.value as Float32Array,
+        transformedPosition,
+        transformedNormal,
         uv.value as Float32Array,
         index?.value as Uint16Array,
       );
@@ -73,11 +195,10 @@ export function prepareScene(gltf: GLTFPostprocessed): SceneData {
       triangles.forEach((triangle) => {
         triangle.materialIndex = allMaterials.length - 1;
       });
+
       allTriangles.push(...triangles);
     }
   }
-
-  return { triangles: allTriangles, materials: allMaterials };
 }
 
 function buildTriangles(
