@@ -136,12 +136,14 @@ fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
 // 场景相交测试
 fn sceneIntersect(ray: Ray) -> HitInfo {
     var closest: HitInfo;
-    closest.t = 9999999.0;
+    closest.t = -1.0;  // 初始化为负值表示未命中
+    var hasHit = false;
     
     for (var i = 0u; i < arrayLength(&triangles); i++) {
         let hit = rayTriangleIntersect(ray, triangles[i]);
-        if (hit.t > 0.0 && hit.t < closest.t) {
+        if (hit.t > 0.0 && (hit.t < closest.t || !hasHit)) {
             closest = hit;
+            hasHit = true;
         }
     }
     

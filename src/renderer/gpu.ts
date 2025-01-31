@@ -46,12 +46,16 @@ export function prepareScene(gltf: GLTFPostprocessed): SceneData {
   const allTriangles: TriangleCPU[] = [];
   const allMaterials: MaterialCPU[] = [];
 
+  console.log(gltf.nodes);
+
   for (const mesh of gltf.meshes) {
     for (const primitive of mesh.primitives) {
       const position = primitive.attributes['POSITION'];
       const normal = primitive.attributes['NORMAL'];
       const uv = primitive.attributes['TEXCOORD_0'];
       const index = primitive.indices;
+
+      console.log('mesh', mesh);
 
       // build triangles
       const triangles = buildTriangles(
@@ -128,6 +132,7 @@ function buildTriangles(
       triangles.push(triangle);
     }
   }
+
   return triangles;
 }
 
