@@ -15,20 +15,20 @@ export class WebGPUProfiler {
     this.statsProxy = new Proxy(
       {},
       {
-        get: (target, prop) => {
+        get: (_target, prop) => {
           if (typeof prop === 'string') {
             return this.queryResults.get(prop) ?? 0;
           }
           return undefined;
         },
         set: () => false,
-        has: (target, prop) => {
+        has: (_target, prop) => {
           return typeof prop === 'string' && this.queryResults.has(prop);
         },
         ownKeys: () => {
           return Array.from(this.queryResults.keys());
         },
-        getOwnPropertyDescriptor: (target, prop) => {
+        getOwnPropertyDescriptor: (_target, prop) => {
           if (typeof prop === 'string' && this.queryResults.has(prop)) {
             return {
               enumerable: true,
