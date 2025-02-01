@@ -1,23 +1,25 @@
+import { Pane } from 'tweakpane';
 import {
   getSizeAndAlignmentOfUnsizedArrayElement,
   makeShaderDataDefinitions,
   makeStructuredView,
 } from 'webgpu-utils';
-import ptShaderSource from '../shader/pt.wgsl?raw';
-import { prepareScene, SceneData, CameraCPU } from './gpu';
-import { loadGLTF } from './loader';
 import { mat4, vec3 } from 'wgpu-matrix';
 import blitShaderSource from '../shader/blit.wgsl?raw';
+import ptShaderSource from '../shader/pt.wgsl?raw';
 import { WebGPUProfiler } from '../utils/profiler';
-import { Pane } from 'tweakpane';
+import { buildBVH } from './bvh';
+import { CameraCPU, prepareScene, SceneData } from './gpu';
+import { loadGLTF } from './loader';
 
-const MAX_FRAMES: number = 128;
+const MAX_FRAMES: number = 1024;
 
 class Renderer {
   private device: GPUDevice;
   private context: GPUCanvasContext;
   private sceneData!: SceneData;
   private frameIndex: number = 0;
+  private bvhBuffer!: GPUBuffer;
 
   private profiler?: WebGPUProfiler;
   private statsPane: Pane;
@@ -235,12 +237,33 @@ class Renderer {
     // Create output buffer
     this.outputBuffer = this.device.createBuffer({
       label: 'path trace result',
-      size: this.context.canvas.width * this.context.canvas.height * 16, // vec3f per pixel, 4 bytes per float (aligned)
+      size: this.context.canvas.width * this.context.canvas.height * 16,
       usage:
         GPUBufferUsage.STORAGE |
         GPUBufferUsage.COPY_SRC |
         GPUBufferUsage.COPY_DST,
     });
+
+    // Build BVH
+    const bvhNodes = buildBVH(this.sceneData.triangles);
+    const bvhView = makeStructuredView(
+      ptShaderDefs.storages.bvhNodes,
+      new ArrayBuffer(
+        bvhNodes.length *
+          getSizeAndAlignmentOfUnsizedArrayElement(
+            ptShaderDefs.storages.bvhNodes,
+          ).size,
+      ),
+    );
+    bvhView.set(bvhNodes);
+
+    // Create BVH buffer
+    this.bvhBuffer = this.device.createBuffer({
+      label: 'bvh nodes',
+      size: bvhView.arrayBuffer.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.bvhBuffer, 0, bvhView.arrayBuffer);
 
     // Create scene data buffers
     const trianglesView = makeStructuredView(
@@ -289,6 +312,7 @@ class Renderer {
   }
 
   private resetOutputBuffer() {
+    // 清空输出缓冲区
     this.device.queue.writeBuffer(
       this.outputBuffer,
       0,
@@ -296,8 +320,15 @@ class Renderer {
         this.context.canvas.width * this.context.canvas.height * 16,
       ),
     );
+
+    // 重置帧索引
     this.frameIndex = 0;
     this.camera.frameIndex = 0;
+
+    // 如果已经停止，则重新开始
+    if (this.animationFrameId === null) {
+      this.start();
+    }
   }
 
   private createBindGroups() {
@@ -309,6 +340,7 @@ class Renderer {
         { binding: 1, resource: { buffer: this.trianglesBuffer } },
         { binding: 2, resource: { buffer: this.materialsBuffer } },
         { binding: 3, resource: { buffer: this.cameraBuffer } },
+        { binding: 4, resource: { buffer: this.bvhBuffer } },
       ],
     });
 
@@ -411,6 +443,7 @@ class Renderer {
     this.outputBuffer.destroy();
     this.trianglesBuffer.destroy();
     this.materialsBuffer.destroy();
+    this.bvhBuffer.destroy();
 
     this.statsPane.dispose();
     this.profiler?.destroy();

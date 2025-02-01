@@ -37,6 +37,19 @@ struct Camera {
     frameIndex: u32,
 }
 
+struct AABB {
+    min: vec3f,
+    max: vec3f,
+}
+
+struct BVHNode {
+    aabb: AABB,
+    left: u32,
+    right: u32,
+    triangleOffset: u32,
+    triangleCount: u32,
+}
+
 struct Ray {
     origin: vec3f,
     direction: vec3f,
@@ -56,6 +69,7 @@ struct HitInfo {
 @group(0) @binding(1) var<storage> triangles: array<Triangle>;
 @group(0) @binding(2) var<storage> materials: array<Material>;
 @group(0) @binding(3) var<uniform> camera: Camera;
+@group(0) @binding(4) var<storage> bvhNodes: array<BVHNode>;
 
 // 随机数生成
 var<private> rngState: u32;
@@ -129,21 +143,69 @@ fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
     return hit;
 }
 
-// 场景相交测试
-fn sceneIntersect(ray: Ray) -> HitInfo {
+// 光线-AABB相交测试
+fn rayAABBIntersect(ray: Ray, aabb: AABB) -> bool {
+    let t1 = (aabb.min - ray.origin) / ray.direction;
+    let t2 = (aabb.max - ray.origin) / ray.direction;
+    
+    let tmin = min(t1, t2);
+    let tmax = max(t1, t2);
+    
+    let t_min = max(max(tmin.x, tmin.y), tmin.z);
+    let t_max = min(min(tmax.x, tmax.y), tmax.z);
+    
+    return t_max >= t_min && t_max >= 0.0;
+}
+
+// BVH遍历函数
+fn traverseBVH(ray: Ray) -> HitInfo {
+    var stack: array<u32, 64>; // BVH遍历栈
+    var stackPtr: u32 = 0u;    // 栈指针
+    
     var closest: HitInfo;
-    closest.t = -1.0;  // 初始化为负值表示未命中
+    closest.t = -1.0;
     var hasHit = false;
     
-    for (var i = 0u; i < arrayLength(&triangles); i++) {
-        let hit = rayTriangleIntersect(ray, triangles[i]);
-        if (hit.t > 0.0 && (hit.t < closest.t || !hasHit)) {
-            closest = hit;
-            hasHit = true;
+    // 从根节点开始
+    stack[stackPtr] = 0u;
+    stackPtr += 1u;
+    
+    while (stackPtr > 0u) {
+        stackPtr -= 1u;
+        let nodeIdx = stack[stackPtr];
+        let node = bvhNodes[nodeIdx];
+        
+        // 检查光线是否与当前节点的AABB相交
+        if (!rayAABBIntersect(ray, node.aabb)) {
+            continue;
+        }
+        
+        // 如果是叶子节点，测试所有三角形
+        if (node.triangleCount > 0u) {
+            for (var i = 0u; i < node.triangleCount; i++) {
+                let triIdx = node.triangleOffset + i;
+                let hit = rayTriangleIntersect(ray, triangles[triIdx]);
+                if (hit.t > 0.0 && (hit.t < closest.t || !hasHit)) {
+                    closest = hit;
+                    hasHit = true;
+                }
+            }
+        } else {
+            // 不是叶子节点，将子节点压入栈中
+            // 注意：这里假设内部节点总是有两个子节点
+            stack[stackPtr] = node.right;
+            stackPtr += 1u;
+            stack[stackPtr] = node.left;
+            stackPtr += 1u;
         }
     }
     
     return closest;
+}
+
+// 修改场景相交测试函数，使用BVH
+fn sceneIntersect(ray: Ray) -> HitInfo {
+    return traverseBVH(ray);
 }
 
 // 改进的随机数生成
