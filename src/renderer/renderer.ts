@@ -11,7 +11,7 @@ import blitShaderSource from '../shader/blit.wgsl?raw';
 import { WebGPUProfiler } from '../utils/profiler';
 import { Pane } from 'tweakpane';
 
-const MAX_FRAMES = -1;
+const MAX_FRAMES: number = 128;
 
 class Renderer {
   private device: GPUDevice;
@@ -127,7 +127,7 @@ class Renderer {
 
   private setupCamera() {
     this.camera = {
-      position: vec3.create(0, 1.0, 2.5),
+      position: vec3.create(0, 1.0, 2.0),
       forward: vec3.create(0, 0, -1),
       right: vec3.create(1, 0, 0),
       up: vec3.create(0, 1, 0),

@@ -1,9 +1,7 @@
-// 常量
 const PI = 3.14159265359;
 const EPSILON = 1e-4;
 const MAX_BOUNCES = 8;
 
-// 结构体定义
 struct Material {
     baseColor: vec3f,
     metallic: f32,
@@ -39,8 +37,6 @@ struct Camera {
     frameIndex: u32,
 }
 
-
-// 光线结构
 struct Ray {
     origin: vec3f,
     direction: vec3f,
@@ -48,13 +44,13 @@ struct Ray {
 
 // 相交信息
 struct HitInfo {
-    t: f32,
-    position: vec3f,
-    normal: vec3f,
-    uv: vec2f,
-    materialIndex: u32,
+    t: f32, // 距离
+    position: vec3f, // 位置
+    normal: vec3f, // 法线
+    uv: vec2f, // 纹理坐标
+    materialIndex: u32, // 材质索引
 }
-
+    
 // 绑定组
 @group(0) @binding(0) var<storage, read_write> outputBuffer: array<vec3f>;
 @group(0) @binding(1) var<storage> triangles: array<Triangle>;
@@ -194,14 +190,13 @@ fn sampleBRDF(normal: vec3f, material: Material, hitPoint: vec3f) -> vec3f {
     return tbn * randomCosineDirection();
 }
 
-// 改进的路径追踪主函数
 fn trace(ray: Ray) -> vec3f {
     var throughput = vec3f(1.0);
     var result = vec3f(0.0);
     var currentRay = ray;
-    
+
     for (var bounce = 0; bounce < MAX_BOUNCES; bounce++) {
-        let hit = sceneIntersect(currentRay);
+        let hit : HitInfo = sceneIntersect(currentRay);
         
         if (hit.t < 0.0) {
             // 使用基于HDR的环境光照
@@ -265,7 +260,6 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 
     initRNG(id.xy, camera.frameIndex);
     
-    // 抗锯齿采样
     let pixel = vec2f(f32(id.x) + rand(), f32(id.y) + rand());
     let uv = (pixel / vec2f(dims)) * 2.0 - 1.0;
     
