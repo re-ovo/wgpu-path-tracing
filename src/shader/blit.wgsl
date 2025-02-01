@@ -63,5 +63,6 @@ fn fragmentMain(@location(0) uv: vec2f) -> @location(0) vec4f {
     let y = u32((1.0 - uv.y) * f32(camera.height - 1));
     let index = y * camera.width + x;
     var color = colorBuffer[index];
+    color = gammaCorrect(ACES(color));
     return vec4f(color, 1.0);
 }
