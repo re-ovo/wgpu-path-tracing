@@ -15,6 +15,7 @@ npm run dev
 ## Features
 
 - [x] GLTF Scene Loading
+- [x] Drag and drop GLB model file to load
 - [x] GPU Time Profiler
 - [ ] PBR Materials
 - [ ] BVH Acceleration
