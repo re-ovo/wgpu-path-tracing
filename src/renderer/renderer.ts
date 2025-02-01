@@ -16,7 +16,7 @@ const MAX_FRAMES = -1;
 class Renderer {
   private device: GPUDevice;
   private context: GPUCanvasContext;
-  private sceneData: SceneData;
+  private sceneData!: SceneData;
   private frameIndex: number = 0;
 
   private profiler?: WebGPUProfiler;
@@ -38,14 +38,9 @@ class Renderer {
   public camera!: CameraCPU;
   private animationFrameId: number | null = null;
 
-  constructor(
-    device: GPUDevice,
-    context: GPUCanvasContext,
-    sceneData: SceneData,
-  ) {
+  constructor(device: GPUDevice, context: GPUCanvasContext) {
     this.device = device;
     this.context = context;
-    this.sceneData = sceneData;
 
     if (device.features.has('timestamp-query')) {
       this.profiler = new WebGPUProfiler(device);
@@ -53,11 +48,15 @@ class Renderer {
 
     this.setupCamera();
     this.createPipelines();
-    this.createBuffers();
-    this.createBindGroups();
 
     this.statsPane = new Pane({
       title: 'WebGPU PathTracing',
+    });
+
+    this.statsPane.addBinding(this.camera, 'frameIndex', {
+      label: 'Frame Index',
+      view: 'text',
+      readonly: true,
     });
 
     if (this.profiler) {
@@ -89,14 +88,41 @@ class Renderer {
       });
     }
 
-    this.statsPane
+    const controlsFolder = this.statsPane.addFolder({
+      title: 'Controls',
+    });
+
+    controlsFolder
       .addButton({
-        title: 'Open',
-        label: 'Github',
+        title: 'Stop',
+        label: 'Stop',
       })
       .on('click', () => {
-        window.open('https://github.com/re-ovo/wgpu-path-tracing', '_blank');
+        this.stop();
       });
+
+    controlsFolder
+      .addButton({
+        title: 'Restart',
+        label: 'Restart',
+      })
+      .on('click', () => {
+        this.resetOutputBuffer();
+        this.start();
+      });
+  }
+
+  public async loadModel(modelPath: string) {
+    const gltf = await loadGLTF(modelPath);
+    this.sceneData = prepareScene(gltf);
+
+    // Reset frame index when loading new model
+    this.frameIndex = 0;
+    this.camera.frameIndex = 0;
+
+    // Recreate buffers and bindings for new model
+    this.createBuffers();
+    this.createBindGroups();
   }
 
   private setupCamera() {
@@ -423,13 +449,11 @@ export async function setupRenderer(canvas: HTMLCanvasElement) {
   } else {
     device = await adapter.requestDevice();
   }
+
   const context = canvas.getContext('webgpu');
   if (!context) {
     throw new Error('Failed to create WebGPU context');
   }
-
-  const gltf = await loadGLTF('/models/cornell.glb');
-  const sceneData = prepareScene(gltf);
 
   const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
   context.configure({
@@ -437,7 +461,8 @@ export async function setupRenderer(canvas: HTMLCanvasElement) {
     format: presentationFormat,
   });
 
-  const renderer = new Renderer(device, context, sceneData);
+  const renderer = new Renderer(device, context);
+  await renderer.loadModel('/models/cornell.glb');
   renderer.start();
 
   // Handle window resize
