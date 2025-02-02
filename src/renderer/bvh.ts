@@ -41,6 +41,7 @@ function computeCentroid(triangle: TriangleCPU): Vec3 {
 
 export function buildBVH(triangles: TriangleCPU[]): BVHNode[] {
   console.log(`Starting BVH build with ${triangles.length} triangles`);
+
   const nodes: BVHNode[] = [];
   const triangleIndices = new Array(triangles.length);
   for (let i = 0; i < triangles.length; i++) {
@@ -57,6 +58,7 @@ export function buildBVH(triangles: TriangleCPU[]): BVHNode[] {
 
   // 创建根节点
   const rootAABB = computeAABB(triangles);
+
   nodes.push({
     aabb: rootAABB,
     left: 0xffffffff,
