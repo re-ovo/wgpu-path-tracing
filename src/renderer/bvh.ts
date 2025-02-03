@@ -152,7 +152,6 @@ export function buildBVH(
   }
 
   console.log(`BVH build completed with ${nodes.length} nodes`);
-  console.log(nodes);
 
   return nodes;
 }
