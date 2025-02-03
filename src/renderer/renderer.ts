@@ -24,6 +24,8 @@ class Renderer {
   private profiler?: WebGPUProfiler;
   private statsPane: Pane;
 
+  private onUpdateTasks: ((deltaTime: number) => void)[] = [];
+
   // Pipelines
   private pathTracePipeline!: GPUComputePipeline;
   private blitPipeline!: GPURenderPipeline;
@@ -39,6 +41,7 @@ class Renderer {
   // Camera
   public camera!: CameraCPU;
   private animationFrameId: number | null = null;
+  private lastTime: number = 0;
 
   constructor(device: GPUDevice, context: GPUCanvasContext) {
     this.device = device;
@@ -114,8 +117,13 @@ class Renderer {
       });
   }
 
+  public addOnUpdate(callback: (deltaTime: number) => void) {
+    this.onUpdateTasks.push(callback);
+  }
+
   public async loadModel(modelPath: string) {
     const gltf = await loadGLTF(modelPath);
+
     this.sceneData = prepareScene(gltf);
 
     // Reset frame index when loading new model
@@ -418,7 +426,16 @@ class Renderer {
   }
 
   public start() {
-    const animate = () => {
+    this.lastTime = performance.now();
+    const animate = (currentTime: number) => {
+      const deltaTime = (currentTime - this.lastTime) / 1000; // Convert to seconds
+      this.lastTime = currentTime;
+
+      // Execute all update tasks
+      for (const task of this.onUpdateTasks) {
+        task(deltaTime);
+      }
+
       this.renderFrame();
       this.animationFrameId = requestAnimationFrame(animate);
 
@@ -426,7 +443,7 @@ class Renderer {
         this.stop();
       }
     };
-    animate();
+    animate(performance.now());
   }
 
   public stop() {
