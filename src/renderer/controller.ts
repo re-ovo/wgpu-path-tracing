@@ -1,3 +1,4 @@
+import { clamp } from '../utils/math';
 import { Renderer } from './renderer';
 
 export class Controller {
@@ -50,7 +51,8 @@ export class Controller {
   }
 
   public update(deltaTime: number) {
-    const ratio = 1 / deltaTime;
+    const ratio = clamp(1 / deltaTime, 0, 250) * 0.2;
+
     if (this.isKeyPressed['w']) {
       this.renderer.moveCamera(0.01 * ratio, 0, 0);
     }
@@ -72,7 +74,7 @@ export class Controller {
     }
 
     if (this.isKeyPressed['Shift'] || this.isKeyPressed['q']) {
-      this.renderer.moveCamera(0, 0, -0.01 * ratio);
+      this.renderer.moveCamera(0, 0, -0.005 * ratio);
     }
 
     if (this.mouseMovement.x !== 0 || this.mouseMovement.y !== 0) {
