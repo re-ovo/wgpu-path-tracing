@@ -12,7 +12,6 @@ import { buildBVH } from './bvh';
 import { CameraCPU, prepareScene, SceneData } from './gpu';
 import { loadGLTF } from './loader';
 import { Controller } from './controller';
-import { toDegrees } from '../utils/math';
 
 const MAX_FRAMES: number = 1024;
 

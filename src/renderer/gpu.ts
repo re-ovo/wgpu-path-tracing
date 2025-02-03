@@ -136,6 +136,8 @@ function processNode(
   allMaterials: MaterialCPU[],
   worldMatrix: Mat4,
 ) {
+  const normalMat = mat4.transpose(mat4.inverse(worldMatrix));
+
   if (node.mesh) {
     for (const primitive of node.mesh.primitives) {
       const position = primitive.attributes['POSITION'];
@@ -160,16 +162,12 @@ function processNode(
         transformedPosition[i + 1] = pos[1];
         transformedPosition[i + 2] = pos[2];
 
-        // Transform normal with inverse transpose of world matrix
-        const normalMatrix = mat4.transpose(mat4.inverse(worldMatrix));
-        const norm = vec3.transformMat4(
-          vec3.create(
-            normal.value[i],
-            normal.value[i + 1],
-            normal.value[i + 2],
-          ),
-          normalMatrix,
+        const norm = vec3.create(
+          normal.value[i],
+          normal.value[i + 1],
+          normal.value[i + 2],
         );
+        vec3.transformMat4Upper3x3(norm, normalMat, norm);
         vec3.normalize(norm, norm);
         transformedNormal[i] = norm[0];
         transformedNormal[i + 1] = norm[1];

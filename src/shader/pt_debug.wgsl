@@ -50,13 +50,27 @@ struct HitInfo {
     materialIndex: u32,
 }
 
+struct AABB {
+    min: vec3f,
+    max: vec3f,
+}
+
+struct BVHNode {
+    aabb: AABB,
+    left: u32,
+    right: u32,
+    triangleOffset: u32,
+    triangleCount: u32,
+}
+
 // 绑定组
 @group(0) @binding(0) var<storage, read_write> outputBuffer: array<vec3f>;
 @group(0) @binding(1) var<storage> triangles: array<Triangle>;
 @group(0) @binding(2) var<storage> materials: array<Material>;
 @group(0) @binding(3) var<uniform> camera: Camera;
+@group(0) @binding(4) var<storage> bvhNodes: array<BVHNode>;
 
-const EPSILON = 0.001;
+const EPSILON = 1e-6;
 
 // 光线-三角形相交测试
 fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
@@ -134,6 +148,8 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     if (id.x >= dims.x || id.y >= dims.y) {
         return;
     }
+
+    let node = bvhNodes[0]; // force auto layout
     
     // 生成光线
     let pixel = vec2f(f32(id.x) + 0.5, f32(id.y) + 0.5);
@@ -153,7 +169,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     if (hit.t > 0.0) {
         // 计算视线方向与法线的点积，判断是否是背面
         let viewDir = -rayDir;  // 视线方向是光线方向的反方向
-        let facingFront = dot(viewDir, hit.normal) > 0.0;
+        let facingFront = dot(viewDir, hit.normal) >= 0.0;
         
         if (facingFront) {
             // 正面显示法线颜色

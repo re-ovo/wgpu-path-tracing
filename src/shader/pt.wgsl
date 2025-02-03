@@ -1,5 +1,5 @@
 const PI = 3.14159265359;
-const EPSILON = 1e-4;
+const EPSILON = 1e-6;
 const MAX_BOUNCES = 8;
 
 struct Material {
@@ -235,9 +235,15 @@ fn sampleBRDF(normal: vec3f, material: Material, hitPoint: vec3f) -> vec3f {
     // 根据材质属性选择采样策略
     if (material.metallic > 0.5) {
         // 金属材质使用镜面反射
-        let reflected = reflect(normalize(-hitPoint), normal);
-        let scattered = randomCosineDirection();
-        return normalize(mix(reflected, tbn * scattered, material.roughness));
+        let viewDir = normalize(-hitPoint);
+        let reflected = reflect(viewDir, normal);
+        
+        // 根据粗糙度添加随机偏移
+        let roughness = material.roughness * material.roughness; // 使用平方来获得更好的视觉效果
+        let scattered = tbn * randomCosineDirection();
+        let finalDir = normalize(mix(reflected, scattered, roughness));
+        
+        return finalDir;
     } else if (material.transmission > 0.5) {
         // 透明材质使用折射
         let eta = select(material.ior, 1.0 / material.ior, dot(normal, -hitPoint) > 0.0);
