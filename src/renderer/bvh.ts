@@ -195,11 +195,6 @@ function findBestSplit(
     if (cost < minCost) {
       minCost = cost;
       bestSplitIndex = splitIndex;
-      console.log(
-        `Best split index: ${bestSplitIndex - startIndex}, size: ${
-          numTriangles
-        }`,
-      );
     }
   }
 
