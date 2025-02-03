@@ -17,9 +17,10 @@ npm run dev
 - [x] GLTF Scene Loading
 - [x] Drag and drop GLB model file to load
 - [x] GPU Time Profiler
-- [ ] PBR Materials
-- [ ] BVH Acceleration
+- [x] BVH Acceleration (with SAH)
 - [ ] Multiple Importance Sampling (MIS)
+- [ ] PBR Materials
+- [ ] Environment Mapping
 
 ## GLTF Extensions Supported
 
@@ -36,6 +37,12 @@ The `gpu.ts` file contains the core logic for loading data from a GLTF file.
 It uses the `@loaders.gl/gltf` library to load the GLTF file and preprocess the data to extract the scene's information.
 
 All the data will be uploaded to the GPU at once.
+
+### BVH Construction
+
+The `bvh.ts` file contains the core logic for constructing the BVH.
+
+It uses SAH (Surface Area Heuristic) to find the best split point for the BVH.
 
 ### Rendering
 
