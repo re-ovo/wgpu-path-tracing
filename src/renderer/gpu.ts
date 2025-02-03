@@ -270,8 +270,8 @@ function buildMaterial(
   const baseColor = material.pbrMetallicRoughness?.baseColorFactor ?? [
     1.0, 1.0, 1.0, 1.0,
   ];
-  const metallic = material.pbrMetallicRoughness?.metallicFactor ?? 0.0;
-  const roughness = material.pbrMetallicRoughness?.roughnessFactor ?? 0.5;
+  const metallic = material.pbrMetallicRoughness?.metallicFactor ?? 1.0;
+  const roughness = material.pbrMetallicRoughness?.roughnessFactor ?? 1.0;
 
   const emissive = material.emissiveFactor ?? [0.0, 0.0, 0.0];
   const emissiveStrength =
