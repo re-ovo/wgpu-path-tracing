@@ -11,10 +11,12 @@ import { WebGPUProfiler } from '../utils/profiler';
 import { buildBVH } from './bvh';
 import { CameraCPU, prepareScene, SceneData } from './gpu';
 import { loadGLTF } from './loader';
+import { Controller } from './controller';
+import { toDegrees } from '../utils/math';
 
 const MAX_FRAMES: number = 1024;
 
-class Renderer {
+export class Renderer {
   private device: GPUDevice;
   private context: GPUCanvasContext;
   private sceneData!: SceneData;
@@ -172,7 +174,18 @@ class Renderer {
     // 创建一个组合旋转矩阵
     const rotation = mat4.identity();
     mat4.rotateY(rotation, yaw, rotation);
-    mat4.rotateX(rotation, pitch, rotation);
+
+    // 计算当前俯仰角
+    const currentPitch = Math.asin(this.camera.forward[1]);
+
+    // 限制新的俯仰角在 -89° 到 89° 之间
+    const newPitch = Math.max(
+      Math.min(currentPitch + pitch, (Math.PI / 2) * 0.99),
+      (-Math.PI / 2) * 0.99,
+    );
+    // 只应用差值
+    const pitchDelta = newPitch - currentPitch;
+    mat4.rotateX(rotation, pitchDelta, rotation);
 
     // 应用旋转到前向向量
     vec3.transformMat4(this.camera.forward, rotation, this.camera.forward);
@@ -185,9 +198,6 @@ class Renderer {
     // 重新计算上向量
     vec3.cross(this.camera.right, this.camera.forward, this.camera.up);
     vec3.normalize(this.camera.up, this.camera.up);
-
-    console.log(rotation);
-    console.log(this.camera.forward, this.camera.right, this.camera.up);
 
     this.resetOutputBuffer();
   }
@@ -523,26 +533,29 @@ export async function setupRenderer(canvas: HTMLCanvasElement) {
   });
 
   // Handle keyboard input
-  window.addEventListener('keydown', (event) => {
-    const key = event.key;
-    if (key === 'w') {
-      renderer.moveCamera(0.1, 0, 0);
-    } else if (key === 's') {
-      renderer.moveCamera(-0.1, 0, 0);
-    } else if (key === 'a') {
-      renderer.moveCamera(0, -0.1, 0);
-    } else if (key === 'd') {
-      renderer.moveCamera(0, 0.1, 0);
-    } else if (key === 'q') {
-      renderer.moveCamera(0, 0, 0.1);
-    } else if (key === 'e') {
-      renderer.moveCamera(0, 0, -0.1);
-    } else if (key === 'r') {
-      renderer.rotateCamera(0.1, 0);
-    } else if (key === 'f') {
-      renderer.rotateCamera(-0.1, 0);
-    }
-  });
+  // window.addEventListener('keydown', (event) => {
+  //   const key = event.key;
+  //   if (key === 'w') {
+  //     renderer.moveCamera(0.1, 0, 0);
+  //   } else if (key === 's') {
+  //     renderer.moveCamera(-0.1, 0, 0);
+  //   } else if (key === 'a') {
+  //     renderer.moveCamera(0, -0.1, 0);
+  //   } else if (key === 'd') {
+  //     renderer.moveCamera(0, 0.1, 0);
+  //   } else if (key === 'q') {
+  //     renderer.moveCamera(0, 0, 0.1);
+  //   } else if (key === 'e') {
+  //     renderer.moveCamera(0, 0, -0.1);
+  //   } else if (key === 'r') {
+  //     renderer.rotateCamera(0.1, 0);
+  //   } else if (key === 'f') {
+  //     renderer.rotateCamera(-0.1, 0);
+  //   }
+  // });
+
+  const controller = new Controller(renderer, canvas);
+  renderer.addOnUpdate((deltaTime) => controller.update(deltaTime));
 
   return renderer;
 }
