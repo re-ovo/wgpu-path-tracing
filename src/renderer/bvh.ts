@@ -33,11 +33,23 @@ interface BuildTask {
   endIndex: number;
 }
 
+/**
+ * Build options
+ *
+ * @param maxTrianglesPerLeaf - 最大三角形数量 (default: 4)
+ * @param numOfBins - 分割轴的bin数量 (default: 12)
+ */
 interface BuildOptions {
   maxTrianglesPerLeaf: number;
   numOfBins: number;
 }
 
+/**
+ * 构建BVH
+ *
+ * @param triangles - 三角形
+ * @param options - 构建选项
+ */
 export function buildBVH(
   triangles: TriangleCPU[],
   options: Partial<BuildOptions> = {},
@@ -47,8 +59,9 @@ export function buildBVH(
   const nodes: BVHNode[] = [];
   const workQueue: BuildTask[] = [];
 
-  // Create root node
+  // 创建根节点
   const rootAABB = computeAABB(triangles);
+
   nodes.push({
     aabb: rootAABB,
     left: -1,
@@ -57,7 +70,7 @@ export function buildBVH(
     triangleCount: triangles.length,
   });
 
-  // Add root task to queue
+  // 将根节点任务添加到队列中
   workQueue.push({
     nodeIndex: 0,
     startIndex: 0,
@@ -69,8 +82,8 @@ export function buildBVH(
     const node = nodes[task.nodeIndex];
     const numTriangles = task.endIndex - task.startIndex;
 
+    // 如果三角形数量小于等于最大三角形数量，则标记为叶节点
     if (numTriangles <= (options.maxTrianglesPerLeaf ?? 4)) {
-      // Leaf node
       node.left = -1;
       node.right = -1;
       node.triangleOffset = task.startIndex;
@@ -144,14 +157,20 @@ export function buildBVH(
   return nodes;
 }
 
+// 根据给定的轴，比较两个三角形
+// compare the triangles based on the given axis
 function compareTriangles(a: TriangleCPU, b: TriangleCPU, axis: Axis) {
   return getTriangleCenter(a, axis) - getTriangleCenter(b, axis);
 }
 
+// 获取三角形的中心点
+// get the center point of the triangle
 function getTriangleCenter(triangle: TriangleCPU, axis: Axis) {
   return (triangle.v0[axis] + triangle.v1[axis] + triangle.v2[axis]) / 3;
 }
 
+// 找到最佳的分割点
+// find the best split point
 function findBestSplit(
   triangles: TriangleCPU[],
   startIndex: number,
@@ -189,13 +208,15 @@ function findBestSplit(
 }
 
 // 遍历代价
+// traversal cost
 const TRAVERSAL_COST = 1.0;
 // 相交测试代价
+// intersection test cost
 const INTERSECTION_TEST_COST = 2.0;
 
 // SAH Cost Function
-// 计算SAH成本函数
 // SAH代价 = 遍历代价 + (左子树面积/父节点面积 * 左子树三角形数量 + 右子树面积/父节点面积 * 右子树三角形数量) * 相交测试代价
+// SAH cost = traversal cost + (left subtree area / parent node area * left subtree triangle count + right subtree area / parent node area * right subtree triangle count) * intersection test cost
 function computeSAH(
   triangles: TriangleCPU[],
   startIndex: number,
