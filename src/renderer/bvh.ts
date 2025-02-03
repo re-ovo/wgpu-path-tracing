@@ -1,10 +1,7 @@
-import { Vec3, vec3 } from 'wgpu-matrix';
+import { vec3 } from 'wgpu-matrix';
+import AABB, { Axis } from '../utils/aabb';
 import { TriangleCPU } from './gpu';
-
-interface AABB {
-  min: Vec3;
-  max: Vec3;
-}
+import { sortArrayPartially } from '../utils/arr';
 
 export interface BVHNode {
   aabb: AABB;
@@ -13,8 +10,6 @@ export interface BVHNode {
   triangleOffset: number;
   triangleCount: number;
 }
-
-const MAX_TRIANGLES_PER_NODE = 4;
 
 function computeAABB(triangles: TriangleCPU[]): AABB {
   const min = vec3.create(Infinity, Infinity, Infinity);
@@ -29,235 +24,191 @@ function computeAABB(triangles: TriangleCPU[]): AABB {
     vec3.max(max, tri.v2, max);
   }
 
-  return { min, max };
+  return new AABB(min, max);
 }
 
-function computeCentroid(triangle: TriangleCPU): Vec3 {
-  return vec3.scale(
-    vec3.add(vec3.add(triangle.v0, triangle.v1), triangle.v2),
-    1 / 3,
-  );
+interface BuildTask {
+  nodeIndex: number;
+  startIndex: number;
+  endIndex: number;
 }
 
-export function buildBVH(triangles: TriangleCPU[]): BVHNode[] {
+interface BuildOptions {
+  maxTrianglesPerLeaf: number;
+  numOfBins: number;
+}
+
+export function buildBVH(
+  triangles: TriangleCPU[],
+  options: Partial<BuildOptions> = {},
+): BVHNode[] {
   console.log(`Starting BVH build with ${triangles.length} triangles`);
 
   const nodes: BVHNode[] = [];
-  const triangleIndices = new Array(triangles.length);
-  for (let i = 0; i < triangles.length; i++) {
-    triangleIndices[i] = i;
-  }
+  const workQueue: BuildTask[] = [];
 
-  // 工作队列，存储待处理的节点信息
-  interface WorkItem {
-    start: number;
-    count: number;
-    nodeIndex: number;
-  }
-  const workQueue: WorkItem[] = [];
-
-  // 创建根节点
+  // Create root node
   const rootAABB = computeAABB(triangles);
-
   nodes.push({
     aabb: rootAABB,
-    left: 0xffffffff,
-    right: 0xffffffff,
+    left: -1,
+    right: -1,
     triangleOffset: 0,
     triangleCount: triangles.length,
   });
 
-  // 将根节点加入工作队列
+  // Add root task to queue
   workQueue.push({
-    start: 0,
-    count: triangles.length,
     nodeIndex: 0,
+    startIndex: 0,
+    endIndex: triangles.length,
   });
 
-  // 迭代处理每个节点
   while (workQueue.length > 0) {
-    const { start, count, nodeIndex } = workQueue.pop()!;
-    console.log(
-      `Processing node ${nodeIndex} with ${count} triangles (start: ${start})`,
-    );
+    const task = workQueue.pop()!;
+    const node = nodes[task.nodeIndex];
+    const numTriangles = task.endIndex - task.startIndex;
 
-    // 如果三角形数量小于阈值，保持为叶子节点
-    if (count <= MAX_TRIANGLES_PER_NODE) {
-      console.log(
-        `Node ${nodeIndex} is a leaf node (triangles <= ${MAX_TRIANGLES_PER_NODE})`,
-      );
+    if (numTriangles <= (options.maxTrianglesPerLeaf ?? 4)) {
+      // Leaf node
+      node.left = -1;
+      node.right = -1;
+      node.triangleOffset = task.startIndex;
+      node.triangleCount = numTriangles;
       continue;
     }
 
-    const node = nodes[nodeIndex];
-    const aabb = node.aabb;
-
-    // 找出最长轴
-    const extent = vec3.sub(aabb.max, aabb.min);
-    let axis = 0;
-    if (extent[1] > extent[0]) axis = 1;
-    if (extent[2] > extent[axis]) axis = 2;
-    console.log(`Splitting along axis ${axis}, extent: ${extent}`);
-
-    // 按中点分割
-    const splitPos = (aabb.min[axis] + aabb.max[axis]) * 0.5;
+    // 非叶节点，需要进行分割
+    // 首先，需要找到最佳的分割轴
+    const aabb = computeAABB(triangles.slice(task.startIndex, task.endIndex));
+    const splitAxis: Axis = aabb.getMaxExtentAxis();
 
     // 对三角形进行排序
-    let left = start;
-    let right = start + count - 1;
+    sortArrayPartially(triangles, task.startIndex, task.endIndex, (a, b) =>
+      compareTriangles(a, b, splitAxis),
+    );
 
-    // 计算当前节点中三角形的质心
-    const centroids = new Array(count);
-    for (let i = 0; i < count; i++) {
-      centroids[i] = computeCentroid(triangles[triangleIndices[start + i]]);
-    }
+    // 使用SAH算法找到最佳的分割点
+    const bestSplit = findBestSplit(
+      triangles,
+      task.startIndex,
+      task.endIndex,
+      splitAxis,
+      options.numOfBins ?? 12,
+    );
 
-    // 使用SAH（Surface Area Heuristic）来找到最佳分割点
-    let bestCost = Infinity;
-    let bestSplitPos = splitPos;
-    let bestAxis = axis;
+    // 创建新的节点
+    const leftNode = {
+      aabb: computeAABB(triangles.slice(task.startIndex, bestSplit)),
+      left: -1,
+      right: -1,
+      triangleOffset: task.startIndex,
+      triangleCount: bestSplit - task.startIndex,
+    };
+    const rightNode = {
+      aabb: computeAABB(triangles.slice(bestSplit, task.endIndex)),
+      left: -1,
+      right: -1,
+      triangleOffset: bestSplit,
+      triangleCount: task.endIndex - bestSplit,
+    };
 
-    // 尝试每个轴向的分割
-    for (let testAxis = 0; testAxis < 3; testAxis++) {
-      // 计算当前轴向的最小和最大值
-      let minVal = Infinity;
-      let maxVal = -Infinity;
-      for (let i = 0; i < count; i++) {
-        const val = centroids[i][testAxis];
-        minVal = Math.min(minVal, val);
-        maxVal = Math.max(maxVal, val);
-      }
+    // 将新的节点添加到nodes数组中
+    nodes.push(leftNode, rightNode);
 
-      // 如果范围太小，跳过这个轴向
-      if (maxVal - minVal < 1e-4) continue;
+    // 更新当前节点的子节点索引
+    node.left = nodes.length - 2;
+    node.right = nodes.length - 1;
 
-      // 尝试几个不同的分割位置
-      const numBins = 32;
-      for (let bin = 1; bin < numBins; bin++) {
-        const testSplitPos = minVal + (maxVal - minVal) * (bin / numBins);
+    // 既然已经分割了，那么当前节点的三角形数量和偏移量都为0，这样就标记为叶节点
+    node.triangleCount = 0;
+    node.triangleOffset = 0;
 
-        // 统计分割后左右两边的三角形数量
-        let leftCount = 0;
-        for (let i = 0; i < count; i++) {
-          if (centroids[i][testAxis] < testSplitPos) {
-            leftCount++;
-          }
-        }
-        const rightCount = count - leftCount;
+    // 将新的任务添加到workQueue中
+    workQueue.push({
+      nodeIndex: nodes.length - 2,
+      startIndex: task.startIndex,
+      endIndex: bestSplit,
+    });
 
-        // 如果任一边为空，跳过这个分割
-        if (leftCount === 0 || rightCount === 0) continue;
+    workQueue.push({
+      nodeIndex: nodes.length - 1,
+      startIndex: bestSplit,
+      endIndex: task.endIndex,
+    });
+  }
 
-        // 计算分割代价（简化版SAH）
-        const cost = leftCount * rightCount;
+  console.log(`BVH build completed with ${nodes.length} nodes`);
+  console.log(nodes);
 
-        if (cost < bestCost) {
-          bestCost = cost;
-          bestSplitPos = testSplitPos;
-          bestAxis = testAxis;
-        }
-      }
-    }
+  return nodes;
+}
 
-    // 使用最佳分割进行实际的分割
-    left = start;
-    right = start + count - 1;
-    const finalSplitPos = bestSplitPos;
-    axis = bestAxis;
+function compareTriangles(a: TriangleCPU, b: TriangleCPU, axis: Axis) {
+  return getTriangleCenter(a, axis) - getTriangleCenter(b, axis);
+}
 
-    while (left <= right) {
-      while (
-        left <= right &&
-        computeCentroid(triangles[triangleIndices[left]])[axis] < finalSplitPos
-      ) {
-        left++;
-      }
-      while (
-        left <= right &&
-        computeCentroid(triangles[triangleIndices[right]])[axis] >=
-          finalSplitPos
-      ) {
-        right--;
-      }
-      if (left < right) {
-        const temp = triangleIndices[left];
-        triangleIndices[left] = triangleIndices[right];
-        triangleIndices[right] = temp;
-        left++;
-        right--;
-      }
-    }
+function getTriangleCenter(triangle: TriangleCPU, axis: Axis) {
+  return (triangle.v0[axis] + triangle.v1[axis] + triangle.v2[axis]) / 3;
+}
 
-    // 如果无法分割，保持为叶子节点
-    if (left <= start || left >= start + count) {
-      console.log(
-        `Node ${nodeIndex} cannot be split (left: ${left}, start: ${start}, count: ${count})`,
-      );
+function findBestSplit(
+  triangles: TriangleCPU[],
+  startIndex: number,
+  endIndex: number,
+  axis: Axis,
+  numOfBins: number,
+) {
+  let minCost = Infinity;
+  let bestSplitIndex = startIndex;
+
+  const numTriangles = endIndex - startIndex;
+
+  for (let i = 1; i < numOfBins; i++) {
+    const ratio = i / numOfBins;
+    const splitIndex = startIndex + Math.floor(numTriangles * ratio);
+
+    if (splitIndex === startIndex || splitIndex === endIndex) {
+      // 分割在AABB的边界上，跳过
       continue;
     }
 
-    // 创建子节点
-    const leftCount = left - start;
-    const rightCount = count - leftCount;
-    console.log(
-      `Split succeeded - left: ${leftCount} triangles, right: ${rightCount} triangles`,
-    );
-
-    // 创建左子节点
-    const leftChildIndex = nodes.length;
-    const leftChildAABB = computeAABB(
-      triangleIndices.slice(start, start + leftCount).map((i) => triangles[i]),
-    );
-    nodes.push({
-      aabb: leftChildAABB,
-      left: 0xffffffff,
-      right: 0xffffffff,
-      triangleOffset: start,
-      triangleCount: leftCount,
-    });
-
-    // 创建右子节点
-    const rightChildIndex = nodes.length;
-    const rightChildAABB = computeAABB(
-      triangleIndices.slice(left, left + rightCount).map((i) => triangles[i]),
-    );
-    nodes.push({
-      aabb: rightChildAABB,
-      left: 0xffffffff,
-      right: 0xffffffff,
-      triangleOffset: left,
-      triangleCount: rightCount,
-    });
-
-    // 更新当前节点
-    nodes[nodeIndex].left = leftChildIndex;
-    nodes[nodeIndex].right = rightChildIndex;
-    nodes[nodeIndex].triangleCount = 0;
-
-    // 将子节点加入工作队列
-    workQueue.push({
-      start: start,
-      count: leftCount,
-      nodeIndex: leftChildIndex,
-    });
-    workQueue.push({
-      start: left,
-      count: rightCount,
-      nodeIndex: rightChildIndex,
-    });
+    const cost = computeSAH(triangles, startIndex, endIndex, axis, splitIndex);
+    if (cost < minCost) {
+      minCost = cost;
+      bestSplitIndex = splitIndex;
+      console.log(
+        `Best split index: ${bestSplitIndex - startIndex}, size: ${
+          numTriangles
+        }`,
+      );
+    }
   }
 
-  // 重新排序三角形数组以匹配BVH结构
-  const reorderedTriangles = new Array(triangles.length);
-  for (let i = 0; i < triangles.length; i++) {
-    reorderedTriangles[i] = triangles[triangleIndices[i]];
-  }
-  triangles.length = 0;
-  triangles.push(...reorderedTriangles);
+  return bestSplitIndex;
+}
 
-  console.log(
-    `BVH built with ${nodes.length} nodes, max triangles per node: ${MAX_TRIANGLES_PER_NODE}`,
-  );
+// 遍历代价
+const TRAVERSAL_COST = 1.0;
+// 相交测试代价
+const INTERSECTION_TEST_COST = 2.0;
 
-  return nodes;
+// SAH Cost Function
+// 计算SAH成本函数
+// SAH代价 = 遍历代价 + (左子树面积/父节点面积 * 左子树三角形数量 + 右子树面积/父节点面积 * 右子树三角形数量) * 相交测试代价
+function computeSAH(
+  triangles: TriangleCPU[],
+  startIndex: number,
+
+  endIndex: number,
+  axis: Axis,
+  splitIndex: number,
+) {
+  const leftAABB = computeAABB(triangles.slice(startIndex, splitIndex));
+  const rightAABB = computeAABB(triangles.slice(splitIndex, endIndex));
+
+  const leftCost = leftAABB.getSurfaceArea() * (splitIndex - startIndex);
+  const rightCost = rightAABB.getSurfaceArea() * (endIndex - splitIndex);
+
+  return TRAVERSAL_COST + (leftCost + rightCost) * INTERSECTION_TEST_COST;
 }

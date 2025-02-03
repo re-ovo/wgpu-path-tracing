@@ -42,7 +42,7 @@ export default class AABB {
     );
   }
 
-  surfaceArea(): number {
+  getSurfaceArea(): number {
     const dx = this.max[0] - this.min[0];
     const dy = this.max[1] - this.min[1];
     const dz = this.max[2] - this.min[2];
