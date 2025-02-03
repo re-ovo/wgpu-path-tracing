@@ -220,41 +220,18 @@ fn randomCosineDirection() -> vec3f {
 }
 
 // 改进的BRDF采样
-fn sampleBRDF(normal: vec3f, material: Material, hitPoint: vec3f) -> vec3f {
-    var tangent = vec3f(1.0, 0.0, 0.0);
-    if (abs(dot(normal, tangent)) > 0.9) {
-        tangent = vec3f(0.0, 1.0, 0.0);
-    }
-    
+fn sampleBRDF(normal: vec3f, material: Material, viewDir: vec3f) -> vec3f {
+    // 使用更稳健的方式构建切线空间
+    var tangent = normalize(cross(normal, select(vec3f(0.0, 1.0, 0.0), vec3f(1.0, 0.0, 0.0), abs(normal.y) > 0.9)));
     let bitangent = normalize(cross(normal, tangent));
-    tangent = normalize(cross(bitangent, normal));
     
-    // 构建TBN矩阵
-    let tbn = mat3x3f(tangent, bitangent, normal);
-    
-    // 根据材质属性选择采样策略
+    // 金属材质：直接反射
     if (material.metallic > 0.5) {
-        // 金属材质使用镜面反射
-        let viewDir = normalize(-hitPoint);
-        let reflected = reflect(viewDir, normal);
-        
-        // 根据粗糙度添加随机偏移
-        let roughness = material.roughness * material.roughness; // 使用平方来获得更好的视觉效果
-        let scattered = tbn * randomCosineDirection();
-        let finalDir = normalize(mix(reflected, scattered, roughness));
-        
-        return finalDir;
-    } else if (material.transmission > 0.5) {
-        // 透明材质使用折射
-        let eta = select(material.ior, 1.0 / material.ior, dot(normal, -hitPoint) > 0.0);
-        var refracted = refract(normalize(-hitPoint), normal, eta);
-        if (length(refracted) > 0.0) {
-            return normalize(refracted);
-        }
-        return reflect(normalize(-hitPoint), normal);
+        return reflect(viewDir, normal);
     }
     
-    // 漫反射材质
+    // 漫反射材质：使用TBN矩阵将余弦分布方向从切线空间转换到世界空间
+    let tbn = mat3x3f(tangent, bitangent, normal);
     return tbn * randomCosineDirection();
 }
 
