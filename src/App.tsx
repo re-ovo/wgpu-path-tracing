@@ -1,13 +1,11 @@
-import { useEffect, useRef, MutableRefObject } from 'react';
+import { useEffect, useRef } from 'react';
 import { setupRenderer } from './renderer/renderer';
 import { useDrop } from 'react-dnd';
 import { NativeTypes } from 'react-dnd-html5-backend';
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rendererRef = useRef<
-    Awaited<ReturnType<typeof setupRenderer>> | undefined
-  >(undefined);
+  const rendererRef = useRef<Awaited<ReturnType<typeof setupRenderer>>>(null);
 
   const [{ isOver }, drop] = useDrop(() => ({
     accept: [NativeTypes.FILE],
@@ -45,19 +43,22 @@ function App() {
   }, []);
 
   return (
-    <div ref={drop} className="w-screen h-screen">
-      <canvas
-        ref={canvasRef}
-        className={`w-full h-full ${isOver ? 'opacity-50' : ''}`}
-      />
-      {isOver && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="bg-white bg-opacity-90 p-4 rounded-lg shadow-lg">
-            <p className="text-lg">Drag and drop GLB model file here</p>
+    <>
+      {/* @ts-expect-error react-dnd types are not updated */}
+      <div ref={drop} className="w-screen h-screen">
+        <canvas
+          ref={canvasRef}
+          className={`w-full h-full ${isOver ? 'opacity-50' : ''}`}
+        />
+        {isOver && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="bg-white bg-opacity-90 p-4 rounded-lg shadow-lg">
+              <p className="text-lg">Drag and drop GLB model file here</p>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </>
   );
 }
 
