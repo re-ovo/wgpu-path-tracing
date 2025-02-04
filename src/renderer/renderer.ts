@@ -8,10 +8,9 @@ import { mat4, vec3 } from 'wgpu-matrix';
 import blitShaderSource from '../shader/blit.wgsl?raw';
 import ptShaderSource from '../shader/pt.wgsl?raw';
 import { WebGPUProfiler } from '../utils/profiler';
-import { buildBVH } from './bvh';
-import { CameraCPU, prepareScene, SceneData } from './gpu';
-import { loadGLTF } from './loader';
+import { CameraCPU, SceneData } from './gpu';
 import { Controller } from './controller';
+import SceneWorker from '../workers/scene.worker.ts?worker';
 
 const MAX_FRAMES: number = 1024;
 
@@ -123,17 +122,31 @@ export class Renderer {
   }
 
   public async loadModel(modelPath: string) {
-    const gltf = await loadGLTF(modelPath);
+    return new Promise<void>((resolve, reject) => {
+      const worker = new SceneWorker();
+      worker.onmessage = (e: MessageEvent) => {
+        const { type, data, error } = e.data;
 
-    this.sceneData = prepareScene(gltf);
+        if (type === 'error') {
+          reject(new Error(error));
+          return;
+        }
 
-    // Reset frame index when loading new model
-    this.frameIndex = 0;
-    this.camera.frameIndex = 0;
+        this.sceneData = data;
 
-    // Recreate buffers and bindings for new model
-    this.createBuffers();
-    this.createBindGroups();
+        // Reset frame index when loading new model
+        this.frameIndex = 0;
+        this.camera.frameIndex = 0;
+
+        // Recreate buffers and bindings for new model
+        this.createBuffers();
+        this.createBindGroups();
+
+        resolve();
+      };
+
+      worker.postMessage({ modelPath });
+    });
   }
 
   private setupCamera() {
