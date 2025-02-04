@@ -43,18 +43,83 @@ struct Camera {
 @group(0) @binding(0) var<storage> colorBuffer: array<vec3f>;
 @group(0) @binding(1) var<uniform> camera: Camera;
 
-// Utility functions for color processing
-fn ACES(x: vec3f) -> vec3f {
-    let a = 2.51;
-    let b = 0.03;
-    let c = 2.43;
-    let d = 0.59;
-    let e = 0.14;
-    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3f(0.0), vec3f(1.0));
-}
+const EXPOSURE = 1.5;
 
 fn gammaCorrect(color: vec3f) -> vec3f {
-    return pow(color, vec3f(1.0/2.2));
+    return pow(color, vec3f(1.0 / 2.2));
+}
+
+fn agxDefaultContrastApprox(x: vec3f) -> vec3f {
+    let x2 = x * x;
+    let x4 = x2 * x2;
+    
+    return 15.5 * x4 * x2
+           - 40.14 * x4 * x
+           + 31.96 * x4
+           - 6.868 * x2 * x
+           + 0.4298 * x2
+           + 0.1191 * x
+           - 0.00232;
+}
+
+fn agx(val: vec3f) -> vec3f {
+    let agx_mat = mat3x3f(
+        0.842479062253094, 0.0423282422610123, 0.0423756549057051,
+        0.0784335999999992, 0.878468636469772, 0.0784336,
+        0.0792237451477643, 0.0791661274605434, 0.879142973793104
+    );
+    
+    let min_ev = -12.47393;
+    let max_ev = 4.026069;
+
+    // Input transform
+    var color = agx_mat * val;
+    
+    // Log2 space encoding
+    color = clamp(log2(color), vec3f(min_ev), vec3f(max_ev));
+    color = (color - min_ev) / (max_ev - min_ev);
+    
+    // Apply sigmoid function approximation
+    color = agxDefaultContrastApprox(color);
+
+    return color;
+}
+
+fn agxEotf(val: vec3f) -> vec3f {
+    let agx_mat_inv = mat3x3f(
+        1.19687900512017, -0.0528968517574562, -0.0529716355144438,
+        -0.0980208811401368, 1.15190312990417, -0.0980434501171241,
+        -0.0990297440797205, -0.0989611768448433, 1.15107367264116
+    );
+    
+    // Undo input transform
+    return agx_mat_inv * val;
+}
+
+fn agxLook(val: vec3f) -> vec3f {
+    let lw = vec3f(0.2126, 0.7152, 0.0722);
+    let luma = dot(val, lw);
+    
+    // Default look
+    let slope = vec3f(1.0);
+    let power = vec3f(1.0);
+    let sat = 1.0;
+    
+    // ASC CDL
+    let color = pow(val * slope, power);
+    return luma + sat * (color - luma);
+}
+
+fn exposureAdjust(color: vec3f, exposure: f32) -> vec3f {
+    return color * exp2(exposure);
+}
+
+fn toneMapping(color: vec3f) -> vec3f {
+    var mapped = exposureAdjust(color, EXPOSURE);
+    mapped = agx(mapped);
+    mapped = agxLook(mapped);
+    mapped = agxEotf(mapped);
+    return mapped;
 }
 
 @fragment
@@ -63,6 +128,6 @@ fn fragmentMain(@location(0) uv: vec2f) -> @location(0) vec4f {
     let y = u32((1.0 - uv.y) * f32(camera.height - 1));
     let index = y * camera.width + x;
     var color = colorBuffer[index];
-    color = gammaCorrect(ACES(color));
+    color = gammaCorrect(toneMapping(color));
     return vec4f(color, 1.0);
 }
