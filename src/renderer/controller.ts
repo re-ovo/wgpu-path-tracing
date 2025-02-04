@@ -8,6 +8,12 @@ export class Controller {
   private isKeyPressed: Record<string, boolean> = {};
   private mouseMovement: { x: number; y: number } = { x: 0, y: 0 };
 
+  // 添加触摸相关状态
+  private touchStartPosition: { x: number; y: number } | null = null;
+  private lastTouchPosition: { x: number; y: number } | null = null;
+  private isTwoFingerTouch = false;
+  private touchDistance = 0;
+
   private onKeyDown = (event: KeyboardEvent) => {
     this.isKeyPressed[event.key] = true;
   };
@@ -39,6 +45,67 @@ export class Controller {
     this.mouseMovement.y += movementY;
   };
 
+  private onTouchStart = (event: TouchEvent) => {
+    event.preventDefault();
+
+    if (event.touches.length === 1) {
+      const touch = event.touches[0];
+      this.touchStartPosition = { x: touch.clientX, y: touch.clientY };
+      this.lastTouchPosition = { x: touch.clientX, y: touch.clientY };
+      this.isTwoFingerTouch = false;
+    } else if (event.touches.length === 2) {
+      this.isTwoFingerTouch = true;
+      const touch1 = event.touches[0];
+      const touch2 = event.touches[1];
+      this.touchDistance = Math.hypot(
+        touch1.clientX - touch2.clientX,
+        touch1.clientY - touch2.clientY,
+      );
+    }
+  };
+
+  private onTouchMove = (event: TouchEvent) => {
+    event.preventDefault();
+
+    if (
+      event.touches.length === 1 &&
+      this.lastTouchPosition &&
+      !this.isTwoFingerTouch
+    ) {
+      const touch = event.touches[0];
+      const movementX = touch.clientX - this.lastTouchPosition.x;
+      const movementY = touch.clientY - this.lastTouchPosition.y;
+
+      this.mouseMovement.x += movementX;
+      this.mouseMovement.y += movementY;
+
+      this.lastTouchPosition = { x: touch.clientX, y: touch.clientY };
+    } else if (event.touches.length === 2) {
+      // 处理双指缩放
+      const touch1 = event.touches[0];
+      const touch2 = event.touches[1];
+      const newDistance = Math.hypot(
+        touch1.clientX - touch2.clientX,
+        touch1.clientY - touch2.clientY,
+      );
+
+      // 根据距离变化移动摄像机前后
+      const deltaDistance = newDistance - this.touchDistance;
+      this.renderer.moveCamera(deltaDistance * 0.001, 0, 0);
+
+      this.touchDistance = newDistance;
+    }
+  };
+
+  private onTouchEnd = (event: TouchEvent) => {
+    event.preventDefault();
+    if (event.touches.length === 0) {
+      this.touchStartPosition = null;
+      this.lastTouchPosition = null;
+      this.isTwoFingerTouch = false;
+    }
+  };
+
   constructor(renderer: Renderer, canvas: HTMLCanvasElement) {
     this.renderer = renderer;
 
@@ -48,6 +115,20 @@ export class Controller {
     window.addEventListener('keyup', this.onKeyUp);
     this.canvas.addEventListener('click', this.onCanvasClick);
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
+
+    // 添加触摸事件监听
+    this.canvas.addEventListener('touchstart', this.onTouchStart, {
+      passive: false,
+    });
+    this.canvas.addEventListener('touchmove', this.onTouchMove, {
+      passive: false,
+    });
+    this.canvas.addEventListener('touchend', this.onTouchEnd, {
+      passive: false,
+    });
+    this.canvas.addEventListener('touchcancel', this.onTouchEnd, {
+      passive: false,
+    });
   }
 
   public update(deltaTime: number) {
@@ -93,5 +174,9 @@ export class Controller {
     this.canvas.removeEventListener('click', this.onCanvasClick);
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
     document.removeEventListener('mousemove', this.onMouseMove);
+    this.canvas.removeEventListener('touchstart', this.onTouchStart);
+    this.canvas.removeEventListener('touchmove', this.onTouchMove);
+    this.canvas.removeEventListener('touchend', this.onTouchEnd);
+    this.canvas.removeEventListener('touchcancel', this.onTouchEnd);
   }
 }
