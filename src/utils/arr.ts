@@ -9,7 +9,7 @@ export function sortArrayPartially<T>(
     throw new Error('Invalid indices: start=' + start + ', end=' + end);
   }
 
-  // Sort the subarray using quicksort
+  // Sort the subarray using iterative quicksort
   const partition = (low: number, high: number): number => {
     const pivot = arr[high];
     let i = low - 1;
@@ -32,13 +32,29 @@ export function sortArrayPartially<T>(
     return i + 1;
   };
 
-  const quickSort = (low: number, high: number) => {
-    if (low < high) {
-      const pi = partition(low, high);
-      quickSort(low, pi - 1);
-      quickSort(pi + 1, high);
-    }
-  };
+  // Use a stack to simulate recursion
+  const stack: number[] = [];
+  stack.push(start);
+  stack.push(end - 1);
 
-  quickSort(start, end - 1);
+  while (stack.length > 0) {
+    const high = stack.pop()!;
+    const low = stack.pop()!;
+
+    if (low < high) {
+      const pivotIndex = partition(low, high);
+
+      // Push the left part onto stack
+      if (pivotIndex - 1 > low) {
+        stack.push(low);
+        stack.push(pivotIndex - 1);
+      }
+
+      // Push the right part onto stack
+      if (pivotIndex + 1 < high) {
+        stack.push(pivotIndex + 1);
+        stack.push(high);
+      }
+    }
+  }
 }
