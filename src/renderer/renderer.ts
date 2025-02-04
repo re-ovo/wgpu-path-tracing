@@ -12,7 +12,7 @@ import { CameraCPU, SceneData } from './gpu';
 import { Controller } from './controller';
 import SceneWorker from '../workers/scene.worker.ts?worker';
 
-const MAX_FRAMES: number = 64;
+const MAX_FRAMES: number = -1;
 
 export class Renderer {
   private device: GPUDevice;

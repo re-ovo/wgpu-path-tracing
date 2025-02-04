@@ -101,7 +101,7 @@ fn randomInUnitSphere() -> vec3f {
 // 光线-三角形相交测试
 fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
     var hit: HitInfo;
-    hit.t = -1.0;
+    hit.t = -1.0f;
     
     let edge1 = triangle.v1 - triangle.v0;
     let edge2 = triangle.v2 - triangle.v0;
@@ -219,79 +219,96 @@ fn randomCosineDirection() -> vec3f {
     return vec3f(x, y, z);
 }
 
-// 改进的BRDF采样
-fn sampleBRDF(normal: vec3f, material: Material, viewDir: vec3f) -> vec3f {
-    // 使用更稳健的方式构建切线空间
-    var tangent = normalize(cross(normal, select(vec3f(0.0, 1.0, 0.0), vec3f(1.0, 0.0, 0.0), abs(normal.y) > 0.9)));
-    let bitangent = normalize(cross(normal, tangent));
-    
-    // 金属材质：直接反射
-    if (material.metallic > 0.5) {
-        return reflect(viewDir, normal);
-    }
-    
-    // 漫反射材质：使用TBN矩阵将余弦分布方向从切线空间转换到世界空间
-    let tbn = mat3x3f(tangent, bitangent, normal);
-    return tbn * randomCosineDirection();
+// 简化BSDF采样结构体，移除PDF
+struct BSDFSample {
+    direction: vec3f,
+    color: vec3f,
 }
 
+// 简化后的BSDF采样函数
+fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray) -> BSDFSample {
+    let metallic = material.metallic;
+    let roughness = material.roughness;
+
+    var sample: BSDFSample;
+    
+    let randValTransmission = rand();
+    if (randValTransmission < material.transmission) {
+        // 透射部分
+        var eta = 1.0 / material.ior;
+        let cosTheta = dot(-currentRay.direction, normal);
+        var normal_adjusted = normal;
+        
+        if (cosTheta < 0.0) {
+            eta = material.ior;
+            normal_adjusted = -normal;
+        }
+        
+        let refracted = refract(currentRay.direction, normal_adjusted, eta);
+        if (any(refracted != vec3f(0.0))) {
+            sample.direction = refracted;
+            sample.color = material.baseColor;
+        } else {
+            sample.direction = reflect(currentRay.direction, normal_adjusted);
+            sample.color = material.baseColor;
+        }
+    } else {
+        let randValReflection = rand();
+
+        if (randValReflection < metallic) {
+            // 金属反射
+            let reflectedDir = reflect(currentRay.direction, normal);
+            let scattered = normalize(reflectedDir + roughness * randomInUnitSphere());
+            
+            sample.direction = scattered;
+            sample.color = material.baseColor * (1.0 - roughness * 0.2);
+        } else {
+            // 漫反射
+            let cosineDir = normalize(normal + randomCosineDirection());
+            
+            sample.direction = cosineDir;
+            sample.color = material.baseColor * (1.0 - metallic);
+        }
+    }
+   
+    return sample;
+}
+
+// 修改trace函数，移除PDF相关计算
 fn trace(ray: Ray) -> vec3f {
     var throughput = vec3f(1.0);
     var result = vec3f(0.0);
     var currentRay = ray;
 
     for (var bounce = 0; bounce < MAX_BOUNCES; bounce++) {
-        let hit : HitInfo = sceneIntersect(currentRay);
-        
+        let hit: HitInfo = sceneIntersect(currentRay);
+
         if (hit.t < 0.0) {
-            // 使用基于HDR的环境光照
-            let t = 0.5 * (currentRay.direction.y + 1.0);
-            let skyColor = mix(
-                vec3f(0.5, 0.7, 1.0), // 天空颜色
-                vec3f(0.2, 0.2, 0.2), // 地平线颜色
-                t
-            );
-            result += throughput * skyColor;
+            result += throughput * vec3f(0.1);
             break;
         }
-        
+
         let material = materials[hit.materialIndex];
-        
-        // 添加自发光贡献
-        if (length(material.emission) > 0.0) {
+
+        if (any(material.emission > vec3f(0.0))) {
             result += throughput * material.emission * material.emissiveStrength;
-            // 发光物体直接结束路径
-            if (material.emissiveStrength > 0.0) {
+        }
+
+        let bsdfSample = sampleBSDF(material, hit.normal, currentRay);
+        throughput *= bsdfSample.color;
+
+        // 俄罗斯轮盘赌
+        if (bounce > 3) {
+            let p = max(max(throughput.x, throughput.y), throughput.z);
+            if (rand() > min(p, 0.95)) {
                 break;
             }
+            throughput /= min(p, 0.95);
         }
-        
-        // 俄罗斯轮盘赌
-        let p = max(max(throughput.r, throughput.g), throughput.b);
-        if (bounce > 2 && rand() > p) {
-            break;
-        }
-        throughput /= p;
-        
-        // 生成新光线方向
-        let newDir = sampleBRDF(hit.normal, material, currentRay.direction);
-        currentRay = Ray(hit.position + hit.normal * EPSILON, newDir);
-        
-        // 更新throughput
-        let cosTheta = max(dot(newDir, hit.normal), 0.0);
-        throughput *= material.baseColor * cosTheta;
-        
-        // 处理金属度
-        if (material.metallic > 0.0) {
-            throughput *= mix(vec3f(1.0), material.baseColor, material.metallic);
-        }
-        
-        // 处理透明度
-        if (material.transmission > 0.0) {
-            throughput *= vec3f(1.0 - material.roughness);
-        }
+
+        currentRay = Ray(hit.position + bsdfSample.direction * EPSILON, normalize(bsdfSample.direction));
     }
-    
+
     return result;
 }
 

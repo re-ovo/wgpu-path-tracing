@@ -114,11 +114,38 @@ fn exposureAdjust(color: vec3f, exposure: f32) -> vec3f {
     return color * exp2(exposure);
 }
 
+fn pbrNeutralToneMapping(color: vec3f) -> vec3f {
+    let startCompression = 0.8 - 0.04;
+    let desaturation = 0.15;
+
+    let x = min(color.r, min(color.g, color.b));
+    let offset = select(0.04, x - 6.25 * x * x, x < 0.08);
+    var mappedColor = color - offset;
+
+    let peak = max(mappedColor.r, max(mappedColor.g, mappedColor.b));
+    if (peak < startCompression) {
+        return mappedColor;
+    }
+
+    let d = 1.0 - startCompression;
+    let newPeak = 1.0 - d * d / (peak + d - startCompression);
+    mappedColor *= newPeak / peak;
+
+    let g = 1.0 - 1.0 / (desaturation * (peak - newPeak) + 1.0);
+    return mix(mappedColor, newPeak * vec3f(1.0), g);
+}
+
 fn toneMapping(color: vec3f) -> vec3f {
     var mapped = exposureAdjust(color, EXPOSURE);
+    
+    // AGX tone mapping
     mapped = agx(mapped);
     mapped = agxLook(mapped);
     mapped = agxEotf(mapped);
+
+    // PBR Neutral tone mapping
+    // mapped = pbrNeutralToneMapping(mapped);
+    
     return mapped;
 }
 
