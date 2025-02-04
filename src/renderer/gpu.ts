@@ -4,6 +4,7 @@ import {
   GLTFPostprocessed,
 } from '@loaders.gl/gltf';
 import { Mat4, mat4, quat, vec2, Vec2, vec3, Vec3 } from 'wgpu-matrix';
+import { buildBVH, BVHNode } from './bvh';
 
 export interface MaterialCPU {
   baseColor: Vec3;
@@ -44,6 +45,7 @@ export interface CameraCPU {
 export interface SceneData {
   triangles: TriangleCPU[];
   materials: MaterialCPU[];
+  bvhNodes: BVHNode[];
 }
 
 export function prepareScene(gltf: GLTFPostprocessed): SceneData {
@@ -85,7 +87,13 @@ export function prepareScene(gltf: GLTFPostprocessed): SceneData {
 
   console.log(`${gltf.nodes.length} nodes, ${allTriangles.length} triangles`);
 
-  return { triangles: allTriangles, materials: allMaterials };
+  const bvhNodes = buildBVH(allTriangles);
+
+  return {
+    triangles: allTriangles,
+    materials: allMaterials,
+    bvhNodes,
+  };
 }
 
 function extractNodeMatrix(node: GLTFNodePostprocessed): Mat4 {

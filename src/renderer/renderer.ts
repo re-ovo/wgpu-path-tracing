@@ -261,27 +261,6 @@ export class Renderer {
         GPUBufferUsage.COPY_DST,
     });
 
-    // Build BVH
-    const bvhNodes = buildBVH(this.sceneData.triangles);
-    const bvhView = makeStructuredView(
-      ptShaderDefs.storages.bvhNodes,
-      new ArrayBuffer(
-        bvhNodes.length *
-          getSizeAndAlignmentOfUnsizedArrayElement(
-            ptShaderDefs.storages.bvhNodes,
-          ).size,
-      ),
-    );
-    bvhView.set(bvhNodes);
-
-    // Create BVH buffer
-    this.bvhBuffer = this.device.createBuffer({
-      label: 'bvh nodes',
-      size: bvhView.arrayBuffer.byteLength,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    });
-    this.device.queue.writeBuffer(this.bvhBuffer, 0, bvhView.arrayBuffer);
-
     // Create scene data buffers
     const trianglesView = makeStructuredView(
       ptShaderDefs.storages.triangles,
@@ -301,7 +280,18 @@ export class Renderer {
           ).size,
       ),
     );
+    const bvhNodes = this.sceneData.bvhNodes;
+    const bvhView = makeStructuredView(
+      ptShaderDefs.storages.bvhNodes,
+      new ArrayBuffer(
+        bvhNodes.length *
+          getSizeAndAlignmentOfUnsizedArrayElement(
+            ptShaderDefs.storages.bvhNodes,
+          ).size,
+      ),
+    );
 
+    bvhView.set(bvhNodes);
     materialsView.set(this.sceneData.materials);
     trianglesView.set(this.sceneData.triangles);
 
@@ -315,6 +305,11 @@ export class Renderer {
       size: materialsView.arrayBuffer.byteLength,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
+    this.bvhBuffer = this.device.createBuffer({
+      label: 'bvh nodes',
+      size: bvhView.arrayBuffer.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
 
     this.device.queue.writeBuffer(
       this.trianglesBuffer,
@@ -326,6 +321,7 @@ export class Renderer {
       0,
       materialsView.arrayBuffer,
     );
+    this.device.queue.writeBuffer(this.bvhBuffer, 0, bvhView.arrayBuffer);
   }
 
   private resetOutputBuffer() {
