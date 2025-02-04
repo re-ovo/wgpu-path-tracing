@@ -540,28 +540,6 @@ export async function setupRenderer(canvas: HTMLCanvasElement) {
     renderer.resize(width, height);
   });
 
-  // Handle keyboard input
-  // window.addEventListener('keydown', (event) => {
-  //   const key = event.key;
-  //   if (key === 'w') {
-  //     renderer.moveCamera(0.1, 0, 0);
-  //   } else if (key === 's') {
-  //     renderer.moveCamera(-0.1, 0, 0);
-  //   } else if (key === 'a') {
-  //     renderer.moveCamera(0, -0.1, 0);
-  //   } else if (key === 'd') {
-  //     renderer.moveCamera(0, 0.1, 0);
-  //   } else if (key === 'q') {
-  //     renderer.moveCamera(0, 0, 0.1);
-  //   } else if (key === 'e') {
-  //     renderer.moveCamera(0, 0, -0.1);
-  //   } else if (key === 'r') {
-  //     renderer.rotateCamera(0.1, 0);
-  //   } else if (key === 'f') {
-  //     renderer.rotateCamera(-0.1, 0);
-  //   }
-  // });
-
   const controller = new Controller(renderer, canvas);
   renderer.addOnUpdate((deltaTime) => controller.update(deltaTime));
 
