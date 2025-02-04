@@ -12,7 +12,7 @@ import { CameraCPU, SceneData } from './gpu';
 import { Controller } from './controller';
 import SceneWorker from '../workers/scene.worker.ts?worker';
 
-const MAX_FRAMES: number = 1024;
+const MAX_FRAMES: number = 64;
 
 export class Renderer {
   private device: GPUDevice;
@@ -454,12 +454,10 @@ export class Renderer {
         task(deltaTime);
       }
 
-      this.renderFrame();
-      this.animationFrameId = requestAnimationFrame(animate);
-
-      if (MAX_FRAMES !== -1 && this.frameIndex > MAX_FRAMES) {
-        this.stop();
+      if (MAX_FRAMES === -1 || this.frameIndex < MAX_FRAMES) {
+        this.renderFrame();
       }
+      this.animationFrameId = requestAnimationFrame(animate);
     };
     animate(performance.now());
   }
