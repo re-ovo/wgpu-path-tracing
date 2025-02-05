@@ -219,64 +219,117 @@ fn randomCosineDirection() -> vec3f {
     return vec3f(x, y, z);
 }
 
-// 简化BSDF采样结构体，移除PDF
 struct BSDFSample {
     direction: vec3f,
     color: vec3f,
+    pdf: f32,
 }
 
-// 简化后的BSDF采样函数
-fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray) -> BSDFSample {
-    let metallic = material.metallic;
-    let roughness = material.roughness;
+// GGX 分布函数
+fn DistributionGGX(N: vec3f, H: vec3f, roughness: f32) -> f32 {
+    let a = roughness * roughness;
+    let a2 = a * a;
+    let NdotH = max(dot(N, H), 0.0);
+    let NdotH2 = NdotH * NdotH;
 
+    let num = a2;
+    let denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    return a2 / (PI * denom * denom);
+}
+
+// 几何函数
+fn GeometrySchlickGGX(NdotV: f32, roughness: f32) -> f32 {
+    let r = roughness + 1.0;
+    let k = (r * r) / 8.0;
+    return NdotV / (NdotV * (1.0 - k) + k);
+}
+
+fn GeometrySmith(N: vec3f, V: vec3f, L: vec3f, roughness: f32) -> f32 {
+    let NdotV = max(dot(N, V), 0.0);
+    let NdotL = max(dot(N, L), 0.0);
+    let ggx2 = GeometrySchlickGGX(NdotV, roughness);
+    let ggx1 = GeometrySchlickGGX(NdotL, roughness);
+    return ggx1 * ggx2;
+}
+
+// Fresnel-Schlick
+fn fresnelSchlick(cosTheta: f32, F0: vec3f) -> vec3f {
+    return F0 + (vec3f(1.0) - F0) * pow(1.0 - cosTheta, 5.0);
+}
+
+fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray) -> BSDFSample {
     var sample: BSDFSample;
     
-    let randValTransmission = rand();
-    if (randValTransmission < material.transmission) {
-        // 透射部分
-        var eta = 1.0 / material.ior;
-        let cosTheta = dot(-currentRay.direction, normal);
-        var normal_adjusted = normal;
-        
-        if (cosTheta < 0.0) {
-            eta = material.ior;
-            normal_adjusted = -normal;
-        }
-        
-        let refracted = refract(currentRay.direction, normal_adjusted, eta);
-        if (any(refracted != vec3f(0.0))) {
-            sample.direction = refracted;
-            sample.color = material.baseColor;
-        } else {
-            sample.direction = reflect(currentRay.direction, normal_adjusted);
-            sample.color = material.baseColor;
-        }
-    } else {
-        let randValReflection = rand();
+    // 入射方向
+    let V = -normalize(currentRay.direction);
+    
+    // TBN Matrix
+    let N = normal;
+    let T = normalize(cross(N, select(vec3f(0.0, 1.0, 0.0), vec3f(1.0, 0.0, 0.0), abs(N.y) > 0.99)));
+    let B = cross(N, T);
+    let TBN = mat3x3f(T, B, N);
 
-        if (randValReflection < metallic) {
-            // 金属反射
-            let reflectedDir = reflect(currentRay.direction, normal);
-            let scattered = normalize(reflectedDir + roughness * randomInUnitSphere());
-            
-            sample.direction = scattered;
-            sample.color = material.baseColor * (1.0 - roughness * 0.2);
-        } else {
-            // 漫反射
-            let cosineDir = normalize(normal + randomCosineDirection());
-            
-            sample.direction = cosineDir;
-            sample.color = material.baseColor * (1.0 - metallic);
-        }
-    }
-   
+    // 采样微表面法线 (GGX)
+    let r1 = rand();
+    let r2 = rand();
+    let a = material.roughness * material.roughness;
+    let phi = 2.0 * PI * r1;
+    let cosTheta = sqrt((1.0 - r2) / (1.0 + (a * a - 1.0) * r2));
+    let sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+    
+    let H = vec3f(
+        sinTheta * cos(phi),
+        sinTheta * sin(phi),
+        cosTheta
+    );
+    
+    // 转换到世界空间
+    let H_world = normalize(TBN * H);
+    
+    // 计算反射方向
+    let L = normalize(reflect(-V, H_world));
+    
+    // 计算各项
+    let NdotL = max(dot(N, L), 0.0);
+    let NdotV = max(dot(N, V), 0.0);
+    let NdotH = max(dot(N, H_world), 0.0);
+    let VdotH = max(dot(V, H_world), 0.0);
+    
+    // 计算F0 (基础反射率)
+    let F0 = mix(vec3f(0.04), material.baseColor, material.metallic);
+    
+    // 计算BRDF各项
+    let D = DistributionGGX(N, H_world, material.roughness);
+    let G = GeometrySmith(N, V, L, material.roughness);
+    let F = fresnelSchlick(VdotH, F0);
+    
+    // 计算BRDF
+    let numerator = D * G * F;
+    let denominator = 4.0 * NdotV * NdotL;
+    let specular = numerator / max(denominator, 0.001);
+    
+    // 计算diffuse
+    let kS = F;
+    let kD = (vec3f(1.0) - kS) * (1.0 - material.metallic);
+    let diffuse = kD * material.baseColor / PI;
+
+    let color = (diffuse + specular) * NdotL;
+    
+    // 最终颜色
+    sample.color = color;
+
+    // Calculate PDF for GGX distribution
+    let pdf = (D * NdotH) / (4.0 * VdotH);
+    sample.pdf = max(pdf, EPSILON);
+
+    sample.direction = L;
+
     return sample;
 }
 
 // 修改trace函数，移除PDF相关计算
 fn trace(ray: Ray) -> vec3f {
-    var throughput = vec3f(1.0);
+    var throughput = vec3f(1.0); 
     var result = vec3f(0.0);
     var currentRay = ray;
 
@@ -284,7 +337,7 @@ fn trace(ray: Ray) -> vec3f {
         let hit: HitInfo = sceneIntersect(currentRay);
 
         if (hit.t < 0.0) {
-            result += throughput * vec3f(0.1);
+            result += throughput * vec3f(0.0);
             break;
         }
 
@@ -292,21 +345,26 @@ fn trace(ray: Ray) -> vec3f {
 
         if (any(material.emission > vec3f(0.0))) {
             result += throughput * material.emission * material.emissiveStrength;
+            break;
         }
 
         let bsdfSample = sampleBSDF(material, hit.normal, currentRay);
-        throughput *= bsdfSample.color;
+        throughput *= bsdfSample.color / max(bsdfSample.pdf, 0.0001);
 
-        // 俄罗斯轮盘赌
-        if (bounce > 3) {
+        // 提前退出条件
+        if (bounce > 2) {
             let p = max(max(throughput.x, throughput.y), throughput.z);
-            if (rand() > min(p, 0.95)) {
+            if (rand() > p) {
                 break;
             }
-            throughput /= min(p, 0.95);
+            throughput /= p;
         }
 
-        currentRay = Ray(hit.position + bsdfSample.direction * EPSILON, normalize(bsdfSample.direction));
+        // 更新光线方向
+        currentRay = Ray(
+            hit.position + hit.normal * EPSILON,
+            normalize(bsdfSample.direction)
+        );
     }
 
     return result;
