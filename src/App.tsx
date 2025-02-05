@@ -40,6 +40,12 @@ function App() {
         rendererRef.current = renderer;
       });
     }
+
+    return () => {
+      if (rendererRef.current) {
+        rendererRef.current.destroy();
+      }
+    };
   }, []);
 
   return (
