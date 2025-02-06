@@ -274,6 +274,24 @@ fn fresnelSchlick(cosTheta: f32, F0: vec3f) -> vec3f {
     return F0 + (vec3f(1.0) - F0) * pow(1.0 - cosTheta, 5.0);
 }
 
+// GGX 法线分布采样
+fn sampleGGXNormal(normal: vec3f, roughness: f32) -> vec3f {
+    let r1 = rand();
+    let r2 = rand();
+    let a = roughness * roughness;
+    let phi = 2.0 * PI * r1;
+    let cosTheta = sqrt((1.0 - r2) / (1.0 + (a * a - 1.0) * r2));
+    let sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+
+    let H = vec3f(
+        sinTheta * cos(phi),
+        sinTheta * sin(phi),
+        cosTheta
+    );
+
+    return H;
+}
+
 fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray) -> BSDFSample {
     var sample: BSDFSample;
     
@@ -286,61 +304,65 @@ fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray) -> BSDFSample 
     let B = cross(N, T);
     let TBN = mat3x3f(T, B, N);
 
-    // 采样微表面法线 (GGX)
-    let r1 = rand();
-    let r2 = rand();
-    let a = material.roughness * material.roughness;
-    let phi = 2.0 * PI * r1;
-    let cosTheta = sqrt((1.0 - r2) / (1.0 + (a * a - 1.0) * r2));
-    let sinTheta = sqrt(1.0 - cosTheta * cosTheta);
-    
-    let H = vec3f(
-        sinTheta * cos(phi),
-        sinTheta * sin(phi),
-        cosTheta
-    );
-    
-    // 转换到世界空间
-    let H_world = normalize(TBN * H);
-    
-    // 计算反射方向
-    let L = normalize(reflect(-V, H_world));
-    
-    // 计算各项
-    let NdotL = max(dot(N, L), 0.0);
-    let NdotV = max(dot(N, V), 0.0);
-    let NdotH = max(dot(N, H_world), 0.0);
-    let VdotH = max(dot(V, H_world), 0.0);
-    
-    // 计算F0 (基础反射率)
-    let F0 = mix(vec3f(0.04), material.baseColor, material.metallic);
-    
-    // 计算BRDF各项
-    let D = DistributionGGX(N, H_world, material.roughness);
-    let G = GeometrySmith(N, V, L, material.roughness);
-    let F = fresnelSchlick(VdotH, F0);
-    
-    // 计算BRDF
-    let numerator = D * G * F;
-    let denominator = 4.0 * NdotV * NdotL;
-    let specular = numerator / max(denominator, 0.001);
-    
-    // 计算diffuse
-    let kS = F;
-    let kD = (vec3f(1.0) - kS) * (1.0 - material.metallic);
-    let diffuse = kD * material.baseColor / PI;
+    // 基于概率采样光线
+    let random = rand();
+    let reflectProb = material.metallic;
+    let refractProb = material.transmission * (1.0 - material.metallic);
+    let diffuseProb = max(1.0 - reflectProb - refractProb, 0.0);
 
-    let color = (diffuse + specular) * NdotL;
+    if (random < reflectProb) {
+        // 镜面反射采样
+        let H = TBN * sampleGGXNormal(N, material.roughness);
+        let L = normalize(reflect(-V, H));
+        
+        let F0 = mix(vec3f(0.04), material.baseColor, material.metallic);
+        let F = fresnelSchlick(max(dot(H, V), 0.0), F0);
+        
+        // 修改PDF计算
+        let NdotV = max(dot(N, V), 0.0);
+        let NdotH = max(dot(N, H), 0.0);
+        let VdotH = max(dot(V, H), 0.0);
+        let NdotL = max(dot(N, L), 0.0);
+        let D = DistributionGGX(N, H, material.roughness);
+        let G = GeometrySmith(N, V, L, material.roughness);
+
+        let pdf_val = (D * NdotH) / (4.0 * VdotH);
+        
+        sample.direction = L;
+        sample.color = (F * D * G) / (4.0 * max(NdotV, 0.0001) * max(NdotL, 0.0001));
+        sample.pdf = pdf_val * reflectProb;
+    } else if (random < reflectProb + refractProb) {
+        // 透射采样
+        let eta = select(1.0 / material.ior, material.ior, dot(N, V) < 0.0);
+        let N_t = select(N, -N, dot(N, V) < 0.0);
+        let cosThetaI = dot(N_t, V);
+        let sin2ThetaI = max(0.0, 1.0 - cosThetaI * cosThetaI);
+        let sin2ThetaT = eta * eta * sin2ThetaI;
+
+        if (sin2ThetaT < 1.0) {
+            let cosThetaT = sqrt(1.0 - sin2ThetaT);
+            let T = eta * V - (cosThetaT + eta * cosThetaI) * N_t;
+            sample.direction = normalize(T);
+            sample.color = vec3f(1.0); // Assuming no absorption for simplicity
+            sample.pdf = refractProb;
+        } else {
+            // Total internal reflection
+            sample.direction = reflect(V, N_t);
+            sample.color = vec3f(1.0);
+            sample.pdf = 1.0;
+        }
+    } else {
+        // 漫反射采样
+        let L = TBN * randomCosineDirection();
+        let NdotL = max(dot(N, L), 0.0);
+        let diffuse = material.baseColor / PI;
+        let pdf = NdotL / PI;
+
+        sample.direction = L;
+        sample.color = diffuse;
+        sample.pdf = pdf * diffuseProb;
+    }
     
-    // 最终颜色
-    sample.color = color;
-
-    // Calculate PDF for GGX distribution
-    let pdf = (D * NdotH) / (4.0 * VdotH);
-    sample.pdf = max(pdf, EPSILON);
-
-    sample.direction = L;
-
     return sample;
 }
 
@@ -366,7 +388,7 @@ fn trace(ray: Ray) -> vec3f {
         }
 
         let bsdfSample = sampleBSDF(material, hit.normal, currentRay);
-        throughput *= bsdfSample.color / max(bsdfSample.pdf, 0.0001);
+        throughput *= bsdfSample.color / max(bsdfSample.pdf, EPSILON);
 
         // 提前退出条件
         if (bounce > 2) {

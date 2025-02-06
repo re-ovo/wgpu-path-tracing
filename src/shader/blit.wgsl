@@ -43,7 +43,7 @@ struct Camera {
 @group(0) @binding(0) var<storage> colorBuffer: array<vec3f>;
 @group(0) @binding(1) var<uniform> camera: Camera;
 
-const EXPOSURE = 1.5;
+const EXPOSURE = 1.0;
 
 fn gammaCorrect(color: vec3f) -> vec3f {
     return pow(color, vec3f(1.0 / 2.2));
@@ -135,6 +135,15 @@ fn pbrNeutralToneMapping(color: vec3f) -> vec3f {
     return mix(mappedColor, newPeak * vec3f(1.0), g);
 }
 
+fn ACES(x: vec3f) -> vec3f {
+    let a = 2.51;
+    let b = 0.03;
+    let c = 2.43;
+    let d = 0.59;
+    let e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3f(0.0), vec3f(1.0));
+}
+
 fn toneMapping(color: vec3f) -> vec3f {
     var mapped = exposureAdjust(color, EXPOSURE);
     
@@ -145,6 +154,9 @@ fn toneMapping(color: vec3f) -> vec3f {
 
     // PBR Neutral tone mapping
     // mapped = pbrNeutralToneMapping(mapped);
+
+    // ACES tone mapping
+    // mapped = ACES(mapped);
     
     return mapped;
 }
