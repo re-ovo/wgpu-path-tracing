@@ -1,4 +1,16 @@
-// Blit shader
+// Define vertices for a full-screen quad
+const positions = array<vec2f, 4>(
+    vec2f(-1.0, -1.0), // 左下
+    vec2f(-1.0, 1.0),  // 左上
+    vec2f(1.0, -1.0),  // 右下
+    vec2f(1.0, 1.0)    // 右上
+);
+const uvs = array<vec2f, 4>(
+    vec2f(0.0, 1.0), // 左下
+    vec2f(0.0, 0.0), // 左上
+    vec2f(1.0, 1.0), // 右下
+    vec2f(1.0, 0.0), // 右上
+);
 
 struct VertexOutput {
     @builtin(position) position: vec4f,
@@ -7,21 +19,6 @@ struct VertexOutput {
 
 @vertex
 fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-    // Define vertices for a full-screen quad
-    const positions = array<vec2f, 4>(
-        vec2f(-1.0, -1.0), // 左下
-        vec2f(-1.0, 1.0), // 左上
-        vec2f(1.0, -1.0), // 右下
-        vec2f(1.0, 1.0), // 右上
-    );
-    
-    const uvs = array<vec2f, 4>(
-        vec2f(0.0, 1.0), // 左下
-        vec2f(0.0, 0.0), // 左上
-        vec2f(1.0, 1.0), // 右下
-        vec2f(1.0, 0.0), // 右上
-    );
-
     var output: VertexOutput;
     output.position = vec4f(positions[vertexIndex], 0.0, 1.0);
     output.uv = uvs[vertexIndex];
@@ -49,6 +46,11 @@ fn gammaCorrect(color: vec3f) -> vec3f {
     return pow(color, vec3f(1.0 / 2.2));
 }
 
+fn exposureAdjust(color: vec3f, exposure: f32) -> vec3f {
+    return color * exp2(exposure);
+}
+
+// AGX Tonemapping functions
 fn agxDefaultContrastApprox(x: vec3f) -> vec3f {
     let x2 = x * x;
     let x4 = x2 * x2;
@@ -72,17 +74,15 @@ fn agx(val: vec3f) -> vec3f {
     let min_ev = -12.47393;
     let max_ev = 4.026069;
 
-    // Input transform
-    var color = agx_mat * val;
+    // Input transform (inset)
+    var result = agx_mat * val;
     
     // Log2 space encoding
-    color = clamp(log2(color), vec3f(min_ev), vec3f(max_ev));
-    color = (color - min_ev) / (max_ev - min_ev);
+    result = clamp(log2(result), vec3f(min_ev), vec3f(max_ev));
+    result = (result - min_ev) / (max_ev - min_ev);
     
     // Apply sigmoid function approximation
-    color = agxDefaultContrastApprox(color);
-
-    return color;
+    return agxDefaultContrastApprox(result);
 }
 
 fn agxEotf(val: vec3f) -> vec3f {
@@ -92,8 +92,11 @@ fn agxEotf(val: vec3f) -> vec3f {
         -0.0990297440797205, -0.0989611768448433, 1.15107367264116
     );
     
-    // Undo input transform
-    return agx_mat_inv * val;
+    // Inverse input transform (outset)
+    let result = agx_mat_inv * val;
+    
+    // sRGB IEC 61966-2-1 2.2 Exponent Reference EOTF Display
+    return pow(result, vec3f(2.2));
 }
 
 fn agxLook(val: vec3f) -> vec3f {
@@ -106,42 +109,8 @@ fn agxLook(val: vec3f) -> vec3f {
     let sat = 1.0;
     
     // ASC CDL
-    let color = pow(val * slope, power);
-    return luma + sat * (color - luma);
-}
-
-fn exposureAdjust(color: vec3f, exposure: f32) -> vec3f {
-    return color * exp2(exposure);
-}
-
-fn pbrNeutralToneMapping(color: vec3f) -> vec3f {
-    let startCompression = 0.8 - 0.04;
-    let desaturation = 0.15;
-
-    let x = min(color.r, min(color.g, color.b));
-    let offset = select(0.04, x - 6.25 * x * x, x < 0.08);
-    var mappedColor = color - offset;
-
-    let peak = max(mappedColor.r, max(mappedColor.g, mappedColor.b));
-    if (peak < startCompression) {
-        return mappedColor;
-    }
-
-    let d = 1.0 - startCompression;
-    let newPeak = 1.0 - d * d / (peak + d - startCompression);
-    mappedColor *= newPeak / peak;
-
-    let g = 1.0 - 1.0 / (desaturation * (peak - newPeak) + 1.0);
-    return mix(mappedColor, newPeak * vec3f(1.0), g);
-}
-
-fn ACES(x: vec3f) -> vec3f {
-    let a = 2.51;
-    let b = 0.03;
-    let c = 2.43;
-    let d = 0.59;
-    let e = 0.14;
-    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3f(0.0), vec3f(1.0));
+    let result = pow(val * slope, power);
+    return luma + sat * (result - luma);
 }
 
 fn toneMapping(color: vec3f) -> vec3f {
@@ -151,12 +120,6 @@ fn toneMapping(color: vec3f) -> vec3f {
     mapped = agx(mapped);
     mapped = agxLook(mapped);
     mapped = agxEotf(mapped);
-
-    // PBR Neutral tone mapping
-    // mapped = pbrNeutralToneMapping(mapped);
-
-    // ACES tone mapping
-    // mapped = ACES(mapped);
     
     return mapped;
 }

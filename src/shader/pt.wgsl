@@ -355,7 +355,8 @@ fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray) -> BSDFSample 
         // 漫反射采样
         let L = TBN * randomCosineDirection();
         let NdotL = max(dot(N, L), 0.0);
-        let diffuse = material.baseColor / PI;
+        
+        let diffuse = material.baseColor / PI * NdotL;
         let pdf = NdotL / PI;
 
         sample.direction = L;
