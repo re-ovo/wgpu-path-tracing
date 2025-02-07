@@ -338,15 +338,6 @@ export class Renderer {
   }
 
   private resetOutputBuffer() {
-    // 清空输出缓冲区
-    this.device.queue.writeBuffer(
-      this.outputBuffer,
-      0,
-      new ArrayBuffer(
-        this.context.canvas.width * this.context.canvas.height * 16,
-      ),
-    );
-
     // 重置帧索引
     this.frameIndex = 0;
     this.camera.frameIndex = 0;
