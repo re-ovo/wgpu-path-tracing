@@ -356,7 +356,7 @@ fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray) -> BSDFSample 
         let L = TBN * randomCosineDirection();
         let NdotL = max(dot(N, L), 0.0);
         
-        let diffuse = material.baseColor / PI * NdotL;
+        let diffuse = (1.0 - material.metallic) * material.baseColor / PI * NdotL;
         let pdf = NdotL / PI;
 
         sample.direction = L;
