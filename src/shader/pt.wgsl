@@ -251,7 +251,7 @@ fn DistributionGGX(N: vec3f, H: vec3f, roughness: f32) -> f32 {
 
     let num = a2;
     let denom = (NdotH2 * (a2 - 1.0) + 1.0);
-    return a2 / (PI * denom * denom);
+    return max(a2 / (PI * denom * denom), 0.0);
 }
 
 // 几何函数
