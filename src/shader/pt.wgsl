@@ -243,7 +243,7 @@ struct BSDFSample {
 }
 
 // GGX 分布函数
-fn DistributionGGX(N: vec3f, H: vec3f, roughness: f32) -> f32 {
+fn distributionGGX(N: vec3f, H: vec3f, roughness: f32) -> f32 {
     let a = roughness * roughness;
     let a2 = a * a;
     let NdotH = max(dot(N, H), 0.0);
@@ -255,17 +255,17 @@ fn DistributionGGX(N: vec3f, H: vec3f, roughness: f32) -> f32 {
 }
 
 // 几何函数
-fn GeometrySchlickGGX(NdotV: f32, roughness: f32) -> f32 {
+fn geometrySchlickGGX(NdotV: f32, roughness: f32) -> f32 {
     let r = roughness + 1.0;
     let k = (r * r) / 8.0;
     return NdotV / (NdotV * (1.0 - k) + k);
 }
 
-fn GeometrySmith(N: vec3f, V: vec3f, L: vec3f, roughness: f32) -> f32 {
+fn geometrySmith(N: vec3f, V: vec3f, L: vec3f, roughness: f32) -> f32 {
     let NdotV = max(dot(N, V), 0.0);
     let NdotL = max(dot(N, L), 0.0);
-    let ggx2 = GeometrySchlickGGX(NdotV, roughness);
-    let ggx1 = GeometrySchlickGGX(NdotL, roughness);
+    let ggx2 = geometrySchlickGGX(NdotV, roughness);
+    let ggx1 = geometrySchlickGGX(NdotL, roughness);
     return ggx1 * ggx2;
 }
 
@@ -323,8 +323,8 @@ fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray) -> BSDFSample 
         let NdotH = max(dot(N, H), 0.0);
         let VdotH = max(dot(V, H), 0.0);
         let NdotL = max(dot(N, L), 0.0);
-        let D = DistributionGGX(N, H, material.roughness);
-        let G = GeometrySmith(N, V, L, material.roughness);
+        let D = distributionGGX(N, H, material.roughness);
+        let G = geometrySmith(N, V, L, material.roughness);
 
         let pdf_val = (D * NdotH) / (4.0 * VdotH);
         
