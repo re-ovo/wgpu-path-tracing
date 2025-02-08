@@ -117,23 +117,63 @@ fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
     return hit;
 }
 
-// 场景相交测试
-fn sceneIntersect(ray: Ray) -> HitInfo {
+// 光线-AABB相交测试
+fn rayAABBIntersect(ray: Ray, aabb: AABB) -> bool {
+    let t1 = (aabb.min - ray.origin) / ray.direction;
+    let t2 = (aabb.max - ray.origin) / ray.direction;
+    
+    let tmin = min(t1, t2);
+    let tmax = max(t1, t2);
+    
+    let t_min = max(max(tmin.x, tmin.y), tmin.z);
+    let t_max = min(min(tmax.x, tmax.y), tmax.z);
+    
+    return t_max >= t_min && t_max >= 0.0;
+}
+
+// BVH遍历函数
+fn traverseBVH(ray: Ray) -> HitInfo {
+    var stack: array<u32, 64>;
+    var stackPtr: u32 = 0u;
     var closest: HitInfo;
     closest.t = -1.0;
     var hasHit = false;
     
-    for (var i = 0u; i < arrayLength(&triangles); i++) {
-        let hit = rayTriangleIntersect(ray, triangles[i]);
-        let material = materials[hit.materialIndex];
-        if (hit.t > 0.0 && (hit.t < closest.t || !hasHit)) {
-            closest = hit;
-            hasHit = true;
+    stack[stackPtr] = 0u;
+    stackPtr += 1u;
+    
+    while (stackPtr > 0u) {
+        stackPtr -= 1u;
+        let nodeIdx = stack[stackPtr];
+        let node = bvhNodes[nodeIdx];
+        
+        if (!rayAABBIntersect(ray, node.aabb)) {
+            continue;
         }
-
+        
+        if (node.triangleCount > 0u) {
+            for (var i = 0u; i < node.triangleCount; i++) {
+                let triIdx = node.triangleOffset + i;
+                let hit = rayTriangleIntersect(ray, triangles[triIdx]);
+                if (hit.t > 0.0 && (hit.t < closest.t || !hasHit)) {
+                    closest = hit;
+                    hasHit = true;
+                }
+            }
+        } else {
+            stack[stackPtr] = node.right;
+            stackPtr += 1u;
+            stack[stackPtr] = node.left;
+            stackPtr += 1u;
+        }
     }
     
     return closest;
+}
+
+// 更新场景相交测试函数，使用BVH
+fn sceneIntersect(ray: Ray) -> HitInfo {
+    return traverseBVH(ray);
 }
 
 // 将法线映射到颜色空间
@@ -168,14 +208,14 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     
     if (hit.t > 0.0) {
         // 计算视线方向与法线的点积，判断是否是背面
-        let viewDir = -rayDir;  // 视线方向是光线方向的反方向
+        let viewDir = -rayDir;
         let facingFront = dot(viewDir, hit.normal) >= 0.0;
         
         if (facingFront) {
             // 正面显示法线颜色
             outputBuffer[bufferIndex] = normalToColor(hit.normal);
 
-            // let material = materials[hit.materialIndex];
+            let material = materials[hit.materialIndex];
             // outputBuffer[bufferIndex] = vec3f(material.metallic);
         } else {
             // 背面显示红色
