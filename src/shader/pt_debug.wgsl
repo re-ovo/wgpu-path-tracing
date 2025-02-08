@@ -175,8 +175,8 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
             // 正面显示法线颜色
             outputBuffer[bufferIndex] = normalToColor(hit.normal);
 
-            let material = materials[hit.materialIndex];
-            outputBuffer[bufferIndex] = vec3f(material.metallic);
+            // let material = materials[hit.materialIndex];
+            // outputBuffer[bufferIndex] = vec3f(material.metallic);
         } else {
             // 背面显示红色
             outputBuffer[bufferIndex] = vec3f(1.0, 0.0, 0.0);
