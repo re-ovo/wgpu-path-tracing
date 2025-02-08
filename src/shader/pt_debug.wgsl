@@ -43,11 +43,12 @@ struct Ray {
 
 // 相交信息
 struct HitInfo {
-    t: f32,
-    position: vec3f,
-    normal: vec3f,
-    uv: vec2f,
-    materialIndex: u32,
+    position: vec3f, // 位置
+    t: f32, // 距离
+    normal: vec3f, // 法线
+    materialIndex: u32, // 材质索引
+    uv: vec2f, // 纹理坐标
+    isFront: bool, // 是否正面
 }
 
 struct AABB {
@@ -112,6 +113,10 @@ fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
         hit.normal = normalize(w * triangle.n0 + u * triangle.n1 + v * triangle.n2);
         hit.uv = w * triangle.uv0 + u * triangle.uv1 + v * triangle.uv2;
         hit.materialIndex = triangle.materialIndex;
+
+        let geometryNormal = cross(edge1, edge2);
+        let facingFront = dot(geometryNormal, ray.direction) < 0.0;
+        hit.isFront = facingFront;
     }
     
     return hit;
@@ -209,9 +214,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     if (hit.t > 0.0) {
         // 计算视线方向与法线的点积，判断是否是背面
         let viewDir = -rayDir;
-        let facingFront = dot(viewDir, hit.normal) >= 0.0;
-        
-        if (facingFront) {
+        if (hit.isFront) {
             // 正面显示法线颜色
             outputBuffer[bufferIndex] = normalToColor(hit.normal);
 

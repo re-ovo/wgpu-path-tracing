@@ -74,11 +74,12 @@ struct Ray {
 
 // 相交信息
 struct HitInfo {
-    t: f32, // 距离
     position: vec3f, // 位置
+    t: f32, // 距离
     normal: vec3f, // 法线
-    uv: vec2f, // 纹理坐标
     materialIndex: u32, // 材质索引
+    uv: vec2f, // 纹理坐标
+    isFront: bool, // 是否正面
 }
     
 // 绑定组
@@ -102,29 +103,18 @@ fn rand() -> f32 {
     return f32(result) / 4294967295.0;
 }
 
-// 生成单位球内随机点
-fn randomInUnitSphere() -> vec3f {
-    let theta = rand() * 2.0 * PI;
-    let phi = acos(2.0 * rand() - 1.0);
-    let r = pow(rand(), 1.0/3.0);
-    
-    return vec3f(
-        r * sin(phi) * cos(theta),
-        r * sin(phi) * sin(theta),
-        r * cos(phi)
-    );
-}
-
 // 光线-三角形相交测试
 fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
     var hit: HitInfo;
-    hit.t = -1.0f;
+    hit.t = -1.0;
     
+    // Möller-Trumbore 算法实现
     let edge1 = triangle.v1 - triangle.v0;
     let edge2 = triangle.v2 - triangle.v0;
     let h = cross(ray.direction, edge2);
     let a = dot(edge1, h);
     
+    // 判断光线是否平行于三角形
     if (abs(a) < EPSILON) {
         return hit;
     }
@@ -133,6 +123,7 @@ fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
     let s = ray.origin - triangle.v0;
     let u = f * dot(s, h);
     
+    // 检查u是否在有效范围
     if (u < 0.0 || u > 1.0) {
         return hit;
     }
@@ -140,25 +131,41 @@ fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
     let q = cross(s, edge1);
     let v = f * dot(ray.direction, q);
     
+    // 检查v和u+v是否在有效范围
     if (v < 0.0 || u + v > 1.0) {
         return hit;
     }
     
+    // 计算交点距离
     let t = f * dot(edge2, q);
-    
     if (t > EPSILON) {
         hit.t = t;
-        hit.position = ray.origin + t * ray.direction;
+        hit.position = ray.origin + ray.direction * t;
         
-        // 计算重心坐标
+        // 插值法线
         let w = 1.0 - u - v;
-        hit.normal = normalize(w * triangle.n0 + u * triangle.n1 + v * triangle.n2);
-        hit.uv = w * triangle.uv0 + u * triangle.uv1 + v * triangle.uv2;
+        hit.normal = normalize(
+            triangle.n0 * w +
+            triangle.n1 * u +
+            triangle.n2 * v
+        );
+        
+        // 插值UV
+        hit.uv = 
+            triangle.uv0 * w +
+            triangle.uv1 * u +
+            triangle.uv2 * v;
+            
         hit.materialIndex = triangle.materialIndex;
+
+        let geometryNormal = cross(edge1, edge2);
+        let facingFront = dot(geometryNormal, ray.direction) < 0.0;
+        hit.isFront = facingFront;
     }
     
     return hit;
 }
+
 
 // 光线-AABB相交测试
 fn rayAABBIntersect(ray: Ray, aabb: AABB) -> bool {
@@ -292,79 +299,101 @@ fn sampleGGXNormal(normal: vec3f, roughness: f32) -> vec3f {
     return H;
 }
 
-fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray) -> BSDFSample {
+fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray, front: bool) -> BSDFSample {
     var sample: BSDFSample;
     
-    // 入射方向
+    // 计算视线方向（从表面点指向相机）
     let V = -normalize(currentRay.direction);
+    let NdotV = max(dot(normal, V), 0.0);
     
-    // TBN Matrix
-    let N = normal;
-    let T = normalize(cross(N, select(vec3f(0.0, 1.0, 0.0), vec3f(1.0, 0.0, 0.0), abs(N.y) > 0.99)));
-    let B = cross(N, T);
-    let TBN = mat3x3f(T, B, N);
-
-    // 基于概率采样光线
-    let random = rand();
-    let reflectProb = material.metallic;
-    let refractProb = material.transmission * (1.0 - material.metallic);
-    let diffuseProb = max(1.0 - reflectProb - refractProb, 0.0);
-
-    if (random < reflectProb) {
-        // 镜面反射采样
-        let H = TBN * sampleGGXNormal(N, material.roughness);
-        let L = normalize(reflect(-V, H));
-        
-        let F0 = mix(vec3f(0.04), material.baseColor, material.metallic);
-        let F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-        
-        // 修改PDF计算
-        let NdotV = max(dot(N, V), 0.0);
-        let NdotH = max(dot(N, H), 0.0);
-        let VdotH = max(dot(V, H), 0.0);
-        let NdotL = max(dot(N, L), 0.0);
-        let D = distributionGGX(N, H, material.roughness);
-        let G = geometrySmith(N, V, L, material.roughness);
-
-        let pdf_val = (D * NdotH) / (4.0 * VdotH);
-        
-        sample.direction = L;
-        sample.color = (F * D * G) / (4.0 * max(NdotV, 0.0001) * max(NdotL, 0.0001));
-        sample.pdf = pdf_val * reflectProb;
-    } else if (random < reflectProb + refractProb) {
-        // 透射采样
-        let eta = select(1.0 / material.ior, material.ior, dot(N, V) < 0.0);
-        let N_t = select(N, -N, dot(N, V) < 0.0);
-        let cosThetaI = dot(N_t, V);
-        let sin2ThetaI = max(0.0, 1.0 - cosThetaI * cosThetaI);
-        let sin2ThetaT = eta * eta * sin2ThetaI;
-
-        if (sin2ThetaT < 1.0) {
-            let cosThetaT = sqrt(1.0 - sin2ThetaT);
-            let T = eta * V - (cosThetaT + eta * cosThetaI) * N_t;
-            sample.direction = normalize(T);
-            sample.color = vec3f(1.0); // Assuming no absorption for simplicity
-            sample.pdf = refractProb;
-        } else {
-            // Total internal reflection
-            sample.direction = reflect(V, N_t);
-            sample.color = vec3f(1.0);
-            sample.pdf = 1.0;
-        }
-    } else {
+    // 基础反射率F0，金属材质使用baseColor，非金属使用0.04
+    let F0 = mix(vec3f(0.04), material.baseColor, material.metallic);
+    
+    // 根据材质属性计算各种BSDF的概率
+    let diffuseProb = (1.0 - material.metallic) * (1.0 - material.transmission);
+    let specularProb = material.metallic;
+    let transmissionProb = (1.0 - material.metallic) * material.transmission;
+    
+    // 随机选择BSDF类型
+    let r = rand();
+    
+    if (r < diffuseProb) {
         // 漫反射采样
-        let L = TBN * randomCosineDirection();
-        let NdotL = max(dot(N, L), 0.0);
+        let localDir = randomCosineDirection();
+        let TBN = constructTBN(normal);
+        sample.direction = TBN * localDir;
         
-        let diffuse = (1.0 - material.metallic) * material.baseColor / PI * NdotL;
-        let pdf = NdotL / PI;
+        // 计算漫反射BRDF
+        let diffuseColor = material.baseColor * (1.0 - material.metallic);
+        sample.color = diffuseColor / PI;
+        sample.pdf = max(dot(normal, sample.direction), 0.0) / PI * diffuseProb;
+        
+    } else if (r < diffuseProb + specularProb) {
+        // 镜面反射采样（GGX）
+        let H = sampleGGXNormal(normal, material.roughness);
+        let TBN = constructTBN(normal);
+        let H_world = normalize(TBN * H);
+        sample.direction = reflect(-V, H_world);
+        
+        let NdotH = max(dot(normal, H_world), 0.0);
+        let NdotL = max(dot(normal, sample.direction), 0.0);
+        let HdotV = max(dot(H_world, V), 0.0);
+        
+        // 计算镜面BRDF
+        let D = distributionGGX(normal, H_world, material.roughness);
+        let G = geometrySmith(normal, V, sample.direction, material.roughness);
+        let F = fresnelSchlick(HdotV, F0);
+        
+        sample.color = (D * G * F) / max(4.0 * NdotV * NdotL, EPSILON);
+        sample.pdf = (D * NdotH / (4.0 * HdotV)) * specularProb;
+        
+    } else {
+        // 透射采样
+        let eta = select(material.ior, 1.0 / material.ior, front);
+        let N = select(-normal, normal, front);
 
-        sample.direction = L;
-        sample.color = diffuse;
-        sample.pdf = pdf * diffuseProb;
+        let cosTheta = dot(N, V);
+        let sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+        let cannotRefract = eta * sinTheta > 1.0;
+
+        // 计算Fresnel反射率
+        let F = reflectance(abs(cosTheta), eta);
+        
+        // 根据Fresnel和roughness决定是反射还是折射
+        if (cannotRefract || (rand() < F)) {
+            // 全反射或Fresnel反射
+            sample.direction = reflect(-V, N);
+            sample.color = material.baseColor;
+        } else {
+            // 折射
+            sample.direction = refract(-V, N, eta);
+            sample.color = material.baseColor;
+        }
+        
+        sample.pdf = transmissionProb;
     }
     
     return sample;
+}
+
+fn reflectance(cosTheta: f32, eta: f32) -> f32 {
+    var r0 = (1.0 - eta) / (1.0 + eta);
+    r0 = r0 * r0;
+    return r0 + (1.0 - r0) * pow(1.0 - cosTheta, 5.0);
+}
+
+
+// 构建切线空间矩阵
+fn constructTBN(N: vec3f) -> mat3x3f {
+    // 创建一个正交基
+    var T = vec3f(1.0, 0.0, 0.0);
+    if (abs(N.x) > 0.9) {
+        T = vec3f(0.0, 1.0, 0.0);
+    }
+    let B = normalize(cross(N, T));
+    T = normalize(cross(B, N));
+    
+    return mat3x3f(T, B, N);
 }
 
 // 修改trace函数，移除PDF相关计算
@@ -388,7 +417,7 @@ fn trace(ray: Ray) -> vec3f {
             break;
         }
 
-        let bsdfSample = sampleBSDF(material, hit.normal, currentRay);
+        let bsdfSample = sampleBSDF(material, hit.normal, currentRay, hit.isFront);
         throughput *= bsdfSample.color / max(bsdfSample.pdf, EPSILON);
 
         // 提前退出条件
@@ -401,8 +430,11 @@ fn trace(ray: Ray) -> vec3f {
         }
 
         // 更新光线方向
+        // 为了防止光线自相交，需要稍微偏移起点
+        // 如果新方向和法线同向，则向法线方向偏移，否则此时发生了折射，需要向相反方向偏移
+        let offset = select(-EPSILON, EPSILON, dot(bsdfSample.direction, hit.normal) > 0.0);
         currentRay = Ray(
-            hit.position + hit.normal * EPSILON,
+            hit.position + hit.normal * offset,
             normalize(bsdfSample.direction)
         );
     }
