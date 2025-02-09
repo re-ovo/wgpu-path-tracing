@@ -512,10 +512,12 @@ export async function setupRenderer(canvas: HTMLCanvasElement) {
     throw new Error('Failed to create WebGPU context');
   }
 
-  const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
   context.configure({
     device: device,
-    format: presentationFormat,
+    format: 'rgba16float',
+    toneMapping: {
+      mode: 'extended',
+    },
   });
 
   const renderer = new Renderer(device, context);
