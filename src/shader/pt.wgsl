@@ -310,18 +310,19 @@ fn sampleGGXNormal(normal: vec3f, roughness: f32) -> vec3f {
     let cosTheta = sqrt((1.0 - r2) / (1.0 + (a * a - 1.0) * r2));
     let sinTheta = sqrt(1.0 - cosTheta * cosTheta);
 
-    let H = vec3f(
+    let N = vec3f(
         sinTheta * cos(phi),
         sinTheta * sin(phi),
         cosTheta
     );
 
-    return H;
+    let tbn = constructTBN(normal);
+    return normalize(tbn * N);
 }
 
 fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray, front: bool) -> BSDFSample {
     var sample: BSDFSample;
-    
+
     // 计算视线方向（从表面点指向相机）
     let V = -normalize(currentRay.direction);
     let NdotV = max(dot(normal, V), 0.0);
@@ -350,23 +351,26 @@ fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray, front: bool) -
         
     } else if (r < diffuseProb + specularProb) {
         // 镜面反射采样（GGX）
-        let H = sampleGGXNormal(normal, material.roughness);
-        let TBN = constructTBN(normal);
-        let H_world = normalize(TBN * H);
-        sample.direction = reflect(-V, H_world);
-        
-        let NdotH = max(dot(normal, H_world), 0.0);
-        let NdotL = max(dot(normal, sample.direction), 0.0);
-        let HdotV = max(dot(H_world, V), 0.0);
-        
+        let roughness = max(material.roughness, 0.04);
+        let N = sampleGGXNormal(normal, roughness);
+
+        sample.direction = reflect(-V, N);
+
+        // 计算半角向量
+        let H = normalize(V + sample.direction);
+
+        let NdotH = max(dot(N, H), 0.0);
+        let NdotL = max(dot(N, V), 0.0);
+        let HdotV = max(dot(H, sample.direction), 0.0);
+
         // 计算镜面BRDF
-        let D = distributionGGX(normal, H_world, material.roughness);
-        let G = geometrySmith(normal, V, sample.direction, material.roughness);
+        let D = distributionGGX(N, H, roughness);
+        let G = geometrySmith(N, V, sample.direction, roughness);
         let F = fresnelSchlick(HdotV, F0);
-        
-        sample.color = (D * G * F) / max(4.0 * NdotV * NdotL, EPSILON);
+
+        let color = (D * G * F) / max(4.0 * NdotV * NdotL, EPSILON);
+        sample.color = color;
         sample.pdf = (D * NdotH / (4.0 * HdotV)) * specularProb;
-        
     } else {
         // 透射采样
         let eta = select(material.ior, 1.0 / material.ior, front);
@@ -433,7 +437,10 @@ fn trace(ray: Ray) -> vec3f {
         let material = materials[hit.materialIndex];
 
         if (any(material.emission > vec3f(0.0))) {
-            result += throughput * material.emission * material.emissiveStrength;
+            // 添加基于距离的衰减
+            let distance = hit.t;
+            let attenuation = 1.0 / (1.0 + distance * distance);
+            result += throughput * material.emission * material.emissiveStrength * attenuation;
             break;
         }
 
@@ -471,6 +478,8 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     }
 
     initRNG(id.xy, camera.frameIndex);
+
+    let light = lights[0];
     
     let pixel = vec2f(f32(id.x) + rand(), f32(id.y) + rand());
     let uv = (pixel / vec2f(dims)) * 2.0 - 1.0;
