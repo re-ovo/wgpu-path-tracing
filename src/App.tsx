@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { setupRenderer } from './renderer/renderer';
 import { useDrop } from 'react-dnd';
 import { NativeTypes } from 'react-dnd-html5-backend';
+import FPSMeter from './ui/fps-meter';
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -63,6 +64,7 @@ function App() {
             </div>
           </div>
         )}
+        <FPSMeter className="absolute top-0 left-0 z-[10] text-white" />
       </div>
     </>
   );
