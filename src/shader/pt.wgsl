@@ -374,7 +374,10 @@ fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray, front: bool) -
     } else {
         // 透射采样
         let eta = select(material.ior, 1.0 / material.ior, front);
-        let N = select(-normal, normal, front);
+        let roughness = max(material.roughness, 0.04);
+
+        var N = sampleGGXNormal(normal, roughness);
+        N = select(-N, N, front);
 
         let cosTheta = dot(N, V);
         let sinTheta = sqrt(1.0 - cosTheta * cosTheta);
