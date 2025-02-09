@@ -372,6 +372,7 @@ export class Renderer {
         { binding: 2, resource: { buffer: this.materialsBuffer } },
         { binding: 3, resource: { buffer: this.cameraBuffer } },
         { binding: 4, resource: { buffer: this.bvhBuffer } },
+        { binding: 5, resource: { buffer: this.lightsBuffer } },
       ],
     });
 
