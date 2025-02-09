@@ -1,10 +1,10 @@
 import {
   GLTFMaterialPostprocessed,
   GLTFNodePostprocessed,
-  GLTFPostprocessed,
 } from '@loaders.gl/gltf';
 import { Mat4, mat4, quat, vec2, Vec2, vec3, Vec3 } from 'wgpu-matrix';
 import { buildBVH, BVHNode } from './bvh';
+import { GLTFNodePostprocessedExt, GLTFPostprocessedExt } from './loader';
 
 export interface MaterialCPU {
   baseColor: Vec3;
@@ -58,9 +58,10 @@ export interface SceneData {
   lights: LightCPU[];
 }
 
-export function prepareScene(gltf: GLTFPostprocessed): SceneData {
+export function prepareScene(gltf: GLTFPostprocessedExt): SceneData {
   const allTriangles: TriangleCPU[] = [];
   const allMaterials: MaterialCPU[] = [];
+  const allLights: LightCPU[] = [];
 
   // build parent map
   const parentMap: Map<GLTFNodePostprocessed, GLTFNodePostprocessed> =
@@ -92,19 +93,24 @@ export function prepareScene(gltf: GLTFPostprocessed): SceneData {
   }
 
   for (const node of gltf.nodes) {
-    processNode(node, allTriangles, allMaterials, worldMatrices.get(node)!);
+    processNode(
+      gltf,
+      node,
+      allTriangles,
+      allMaterials,
+      allLights,
+      worldMatrices.get(node)!,
+    );
   }
 
   console.log(`${gltf.nodes.length} nodes, ${allTriangles.length} triangles`);
 
   const bvhNodes = buildBVH(allTriangles);
 
-  const allLights: LightCPU[] = [];
-
   return {
     triangles: allTriangles,
     materials: allMaterials,
-    bvhNodes,
+    bvhNodes: bvhNodes,
     lights: allLights,
   };
 }
@@ -152,13 +158,49 @@ function extractNodeMatrix(node: GLTFNodePostprocessed): Mat4 {
 }
 
 function processNode(
-  node: GLTFNodePostprocessed,
+  gltf: GLTFPostprocessedExt,
+  node: GLTFNodePostprocessedExt,
   allTriangles: TriangleCPU[],
   allMaterials: MaterialCPU[],
+  allLights: LightCPU[],
   worldMatrix: Mat4,
 ) {
   const normalMat = mat4.transpose(mat4.inverse(worldMatrix));
 
+  // Process lights
+  if (node.light !== undefined) {
+    const lightIndex = node.light;
+    const light = gltf.lights[lightIndex];
+    if (light.type === 'directional') {
+      const lightCPU: LightCPU = {
+        position: vec3.create(0.0, 0.0, 0.0),
+        lightType: 1,
+        color: light.color
+          ? vec3.create(light.color[0], light.color[1], light.color[2])
+          : vec3.create(1.0, 1.0, 1.0),
+        intensity: light.intensity ?? 1.0,
+        radius: 0.0,
+        triangleIndex: 0,
+      };
+      allLights.push(lightCPU);
+    } else if (light.type === 'point') {
+      const lightCPU: LightCPU = {
+        position: vec3.create(0.0, 0.0, 0.0),
+        lightType: 2,
+        color: light.color
+          ? vec3.create(light.color[0], light.color[1], light.color[2])
+          : vec3.create(1.0, 1.0, 1.0),
+        intensity: light.intensity ?? 1.0,
+        radius: light.range ?? 0.0,
+        triangleIndex: 0,
+      };
+      allLights.push(lightCPU);
+    } else {
+      console.warn(`Unsupported light type: ${light.type}`);
+    }
+  }
+
+  // Process mesh
   if (node.mesh) {
     for (const primitive of node.mesh.primitives) {
       const position = primitive.attributes['POSITION'];
@@ -213,6 +255,22 @@ function processNode(
       });
 
       allTriangles.push(...triangles);
+
+      // check emissive light
+      if (vec3.length(material.emission) > 0.0) {
+        const startIndex = allTriangles.length - triangles.length;
+        for (let i = 0; i < triangles.length; i++) {
+          const lightCPU: LightCPU = {
+            position: vec3.create(0.0, 0.0, 0.0),
+            lightType: 0,
+            color: material.emission,
+            intensity: material.emissiveStrength,
+            radius: 0.0,
+            triangleIndex: startIndex + i,
+          };
+          allLights.push(lightCPU);
+        }
+      }
     }
   }
 }
