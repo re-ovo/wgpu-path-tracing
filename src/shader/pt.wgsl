@@ -142,13 +142,40 @@ fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
         hit.t = t;
         hit.position = ray.origin + ray.direction * t;
         
-        // 插值法线
+        // 计算几何法线
+        let edge1 = triangle.v1 - triangle.v0;
+        let edge2 = triangle.v2 - triangle.v0;
+        let geometryNormal = normalize(cross(edge1, edge2));
+        
+        // 计算插值法线
         let w = 1.0 - u - v;
-        hit.normal = normalize(
+        let interpolatedNormal = normalize(
             triangle.n0 * w +
             triangle.n1 * u +
             triangle.n2 * v
         );
+        
+        // 确定光线是从正面还是背面击中三角形
+        let facingFront = dot(geometryNormal, ray.direction) < 0.0;
+        hit.isFront = facingFront;
+        
+        // 检查插值法线是否与几何法线方向一致
+        // 如果不一致，使用几何法线
+        if (facingFront) {
+            // 如果是正面，插值法线应该朝向光线相反方向
+            if (dot(interpolatedNormal, -ray.direction) < 0.0) {
+                hit.normal = geometryNormal;
+            } else {
+                hit.normal = interpolatedNormal;
+            }
+        } else {
+            // 如果是背面，插值法线应该朝向光线方向
+            if (dot(interpolatedNormal, ray.direction) < 0.0) {
+                hit.normal = -geometryNormal;
+            } else {
+                hit.normal = interpolatedNormal;
+            }
+        }
         
         // 插值UV
         hit.uv = 
@@ -157,10 +184,6 @@ fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
             triangle.uv2 * v;
             
         hit.materialIndex = triangle.materialIndex;
-
-        let geometryNormal = cross(edge1, edge2);
-        let facingFront = dot(geometryNormal, ray.direction) < 0.0;
-        hit.isFront = facingFront;
     }
     
     return hit;
