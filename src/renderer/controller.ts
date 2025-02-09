@@ -1,5 +1,7 @@
-import { clamp } from '../utils/math';
 import { Renderer } from './renderer';
+
+const MOVE_SPEED = 2.0;
+const ROTATE_SPEED = Math.PI / 18;
 
 export class Controller {
   private renderer: Renderer;
@@ -132,36 +134,35 @@ export class Controller {
   }
 
   public update(deltaTime: number) {
-    const ratio = clamp(1 / deltaTime, 0, 250) * 0.2;
-
+    // 将速度乘以 deltaTime 使其与时间相关，而不是与帧率相关
     if (this.isKeyPressed['w']) {
-      this.renderer.moveCamera(0.01 * ratio, 0, 0);
+      this.renderer.moveCamera(MOVE_SPEED * deltaTime, 0, 0);
     }
 
     if (this.isKeyPressed['s']) {
-      this.renderer.moveCamera(-0.01 * ratio, 0, 0);
+      this.renderer.moveCamera(-MOVE_SPEED * deltaTime, 0, 0);
     }
 
     if (this.isKeyPressed['a']) {
-      this.renderer.moveCamera(0, -0.01 * ratio, 0);
+      this.renderer.moveCamera(0, -MOVE_SPEED * deltaTime, 0);
     }
 
     if (this.isKeyPressed['d']) {
-      this.renderer.moveCamera(0, 0.01 * ratio, 0);
+      this.renderer.moveCamera(0, MOVE_SPEED * deltaTime, 0);
     }
 
     if (this.isKeyPressed[' ']) {
-      this.renderer.moveCamera(0, 0, 0.01 * ratio);
+      this.renderer.moveCamera(0, 0, MOVE_SPEED * deltaTime);
     }
 
     if (this.isKeyPressed['Shift'] || this.isKeyPressed['q']) {
-      this.renderer.moveCamera(0, 0, -0.005 * ratio);
+      this.renderer.moveCamera(0, 0, -MOVE_SPEED * deltaTime);
     }
 
     if (this.mouseMovement.x !== 0 || this.mouseMovement.y !== 0) {
       this.renderer.rotateCamera(
-        this.mouseMovement.x * -0.0001 * ratio,
-        this.mouseMovement.y * -0.0001 * ratio,
+        this.mouseMovement.x * -ROTATE_SPEED * deltaTime,
+        this.mouseMovement.y * -ROTATE_SPEED * deltaTime,
       );
       this.mouseMovement.x = 0;
       this.mouseMovement.y = 0;
