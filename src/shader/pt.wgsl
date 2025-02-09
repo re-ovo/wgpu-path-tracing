@@ -30,16 +30,12 @@ const LIGHT_TYPE_DIRECTIONAL = 1u;
 const LIGHT_TYPE_POINT = 2u;
 
 struct Light {
-    position: vec3f,    // 点光源的位置 或 方向光的方向(需要归一化)
-    lightType: u32, // 光源类型
-    color: vec3f, // 光源颜色
-    intensity: f32, // 光源强度
-    // 点光源参数
-    radius: f32,        // 点光源的半径
-    range: f32,         // 光照影响范围
-    // 发光体参数
-    triangleIndex: u32, // 发光三角形索引
-    area: f32,         // 发光三角形面积(用于重要性采样)
+    position: vec3f, // (position or direction)
+    lightType: u32, // light type (align)
+    color: vec3f,
+    intensity: f32,
+    radius: f32, // only for point light
+    triangleIndex: u32, // only for emissive light
 }
 
 struct Camera {
@@ -88,6 +84,7 @@ struct HitInfo {
 @group(0) @binding(2) var<storage> materials: array<Material>;
 @group(0) @binding(3) var<uniform> camera: Camera;
 @group(0) @binding(4) var<storage> bvhNodes: array<BVHNode>;
+@group(0) @binding(5) var<storage> lights: array<Light>;
 
 // 随机数生成
 var<private> rngState: u32;

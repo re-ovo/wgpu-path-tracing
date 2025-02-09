@@ -19,7 +19,6 @@ export class Renderer {
   private context: GPUCanvasContext;
   private sceneData!: SceneData;
   private frameIndex: number = 0;
-  private bvhBuffer!: GPUBuffer;
 
   private profiler?: WebGPUProfiler;
   private statsPane: Pane;
@@ -35,6 +34,8 @@ export class Renderer {
   private trianglesBuffer!: GPUBuffer;
   private materialsBuffer!: GPUBuffer;
   private cameraBuffer!: GPUBuffer;
+  private bvhBuffer!: GPUBuffer;
+  private lightsBuffer!: GPUBuffer;
   private computeBindGroup!: GPUBindGroup;
   private blitBindGroup!: GPUBindGroup;
 
@@ -293,20 +294,27 @@ export class Renderer {
           ).size,
       ),
     );
-    const bvhNodes = this.sceneData.bvhNodes;
     const bvhView = makeStructuredView(
       ptShaderDefs.storages.bvhNodes,
       new ArrayBuffer(
-        bvhNodes.length *
+        this.sceneData.bvhNodes.length *
           getSizeAndAlignmentOfUnsizedArrayElement(
             ptShaderDefs.storages.bvhNodes,
           ).size,
       ),
     );
-
-    bvhView.set(bvhNodes);
+    const lightsView = makeStructuredView(
+      ptShaderDefs.storages.lights,
+      new ArrayBuffer(
+        this.sceneData.lights.length *
+          getSizeAndAlignmentOfUnsizedArrayElement(ptShaderDefs.storages.lights)
+            .size,
+      ),
+    );
+    bvhView.set(this.sceneData.bvhNodes);
     materialsView.set(this.sceneData.materials);
     trianglesView.set(this.sceneData.triangles);
+    lightsView.set(this.sceneData.lights);
 
     this.trianglesBuffer = this.device.createBuffer({
       label: 'triangles',
@@ -323,6 +331,11 @@ export class Renderer {
       size: bvhView.arrayBuffer.byteLength,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
+    this.lightsBuffer = this.device.createBuffer({
+      label: 'lights',
+      size: lightsView.arrayBuffer.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
 
     this.device.queue.writeBuffer(
       this.trianglesBuffer,
@@ -335,6 +348,7 @@ export class Renderer {
       materialsView.arrayBuffer,
     );
     this.device.queue.writeBuffer(this.bvhBuffer, 0, bvhView.arrayBuffer);
+    this.device.queue.writeBuffer(this.lightsBuffer, 0, lightsView.arrayBuffer);
   }
 
   private resetOutputBuffer() {
@@ -468,6 +482,7 @@ export class Renderer {
     this.trianglesBuffer.destroy();
     this.materialsBuffer.destroy();
     this.bvhBuffer.destroy();
+    this.lightsBuffer.destroy();
 
     this.statsPane.dispose();
     this.profiler?.destroy();

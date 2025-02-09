@@ -42,10 +42,20 @@ export interface CameraCPU {
   frameIndex: number;
 }
 
+export interface LightCPU {
+  position: Vec3;
+  lightType: number;
+  color: Vec3;
+  intensity: number;
+  radius: number;
+  triangleIndex: number;
+}
+
 export interface SceneData {
   triangles: TriangleCPU[];
   materials: MaterialCPU[];
   bvhNodes: BVHNode[];
+  lights: LightCPU[];
 }
 
 export function prepareScene(gltf: GLTFPostprocessed): SceneData {
@@ -89,10 +99,13 @@ export function prepareScene(gltf: GLTFPostprocessed): SceneData {
 
   const bvhNodes = buildBVH(allTriangles);
 
+  const allLights: LightCPU[] = [];
+
   return {
     triangles: allTriangles,
     materials: allMaterials,
     bvhNodes,
+    lights: allLights,
   };
 }
 
