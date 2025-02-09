@@ -15,11 +15,11 @@ npm run dev
 ## Features
 
 - [x] GLTF Scene Loading
-- [x] Drag and drop GLB model file to load
+- [x] Drag and Drop model file to load (asynchronous via web worker)
 - [x] GPU Time Profiler
 - [x] BVH Acceleration (with SAH)
 - [ ] Multiple Importance Sampling (MIS)
-- [ ] PBR Materials
+- [x] PBR Materials (with Metallic/Roughness/Transmission/Emissive)
 - [ ] Environment Mapping
 
 ## GLTF Extensions Supported
