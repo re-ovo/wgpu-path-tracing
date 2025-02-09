@@ -126,10 +126,17 @@ export class Renderer {
     return new Promise<void>((resolve, reject) => {
       const worker = new SceneWorker();
       worker.onmessage = (e: MessageEvent) => {
-        const { type, data, error } = e.data;
+        const { type, data, error, message } = e.data;
 
         if (type === 'error') {
           reject(new Error(error));
+          return;
+        }
+
+        if (type === 'loading') {
+          // Update loading status in UI
+          document.title = `${message}`;
+          document.body.style.cursor = 'wait';
           return;
         }
 
@@ -142,6 +149,10 @@ export class Renderer {
         // Recreate buffers and bindings for new model
         this.createBuffers();
         this.createBindGroups();
+
+        // Reset cursor
+        document.body.style.cursor = 'default';
+        document.title = `WebGPU Path Tracing`;
 
         resolve();
       };
