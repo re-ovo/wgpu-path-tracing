@@ -11,6 +11,7 @@ import { WebGPUProfiler } from '../utils/profiler';
 import { CameraCPU, SceneData } from './gpu';
 import { Controller } from './controller';
 import SceneWorker from '../workers/scene.worker.ts?worker';
+import { toast } from 'sonner';
 
 const MAX_FRAMES: number = -1;
 
@@ -123,20 +124,13 @@ export class Renderer {
   }
 
   public async loadModel(modelPath: string) {
-    return new Promise<void>((resolve, reject) => {
+    const promise = new Promise<void>((resolve, reject) => {
       const worker = new SceneWorker();
       worker.onmessage = (e: MessageEvent) => {
-        const { type, data, error, message } = e.data;
+        const { type, data, error } = e.data;
 
         if (type === 'error') {
           reject(new Error(error));
-          return;
-        }
-
-        if (type === 'loading') {
-          // Update loading status in UI
-          document.title = `${message}`;
-          document.body.style.cursor = 'wait';
           return;
         }
 
@@ -150,15 +144,17 @@ export class Renderer {
         this.createBuffers();
         this.createBindGroups();
 
-        // Reset cursor
-        document.body.style.cursor = 'default';
-        document.title = `WebGPU Path Tracing`;
-
         resolve();
       };
 
       worker.postMessage({ modelPath });
     });
+    toast.promise(promise, {
+      loading: 'Loading...',
+      success: 'Loaded',
+      error: 'Failed to load model',
+    });
+    return promise;
   }
 
   private setupCamera() {

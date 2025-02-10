@@ -3,8 +3,8 @@ import { ComponentPropsWithoutRef, useEffect, useRef, useState } from 'react';
 // Constants
 const FPS_UPDATE_INTERVAL = 500; // Update FPS display every 500ms
 const BUFFER_SIZE = 100; // History buffer size
-const MAX_FPS = 160; // Maximum FPS value for chart scaling
-const CHART_WIDTH = 200;
+const MAX_FPS = 250; // Maximum FPS value for chart scaling
+const CHART_WIDTH = 100;
 const CHART_HEIGHT = 60;
 
 interface ChartProps {
