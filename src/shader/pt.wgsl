@@ -100,6 +100,10 @@ fn rand() -> f32 {
     return f32(result) / 4294967295.0;
 }
 
+fn randInt(min: u32, max: u32) -> u32 {
+    return min + u32(rand() * f32(max - min + 1));
+}
+
 // 光线-三角形相交测试
 fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
     var hit: HitInfo;
@@ -320,6 +324,97 @@ fn sampleGGXNormal(normal: vec3f, roughness: f32) -> vec3f {
     return normalize(tbn * N);
 }
 
+struct LightSample {
+    position: vec3f,
+    pdf: f32,
+    direction: vec3f,
+    color: vec3f,
+}
+
+// 采样光源
+fn sampleLight() -> LightSample {
+    let light = lights[randInt(0u, arrayLength(&lights) - 1u)];
+    let lightType = light.lightType;
+    
+    var sample: LightSample;
+    
+    switch lightType {
+        case LIGHT_TYPE_EMISSIVE: {
+            // 采样发光三角形
+            let triangle = triangles[light.triangleIndex];
+            
+            // 在三角形上均匀采样一个点
+            let r1 = rand();
+            let r2 = rand();
+            let sqrtR1 = sqrt(r1);
+            
+            let u = 1.0 - sqrtR1;
+            let v = r2 * sqrtR1;
+            let w = 1.0 - u - v;
+            
+            // 计算采样点位置
+            sample.direction = triangle.v0 * w + triangle.v1 * u + triangle.v2 * v;
+            
+            // 计算三角形面积
+            let edge1 = triangle.v1 - triangle.v0;
+            let edge2 = triangle.v2 - triangle.v0;
+            let triangleArea = length(cross(edge1, edge2)) * 0.5;
+            
+            // PDF是三角形面积的倒数除以光源的总数
+            sample.pdf = 1.0 / (triangleArea * f32(arrayLength(&lights)));
+            
+            // 发光强度
+            let material = materials[triangle.materialIndex];
+            sample.color = material.emission * material.emissiveStrength;
+            sample.position = triangle.v0 * w + triangle.v1 * u + triangle.v2 * v;
+        }
+        case LIGHT_TYPE_DIRECTIONAL: {
+            // 方向光
+            sample.direction = -normalize(light.position);
+            sample.pdf = 1.0;
+            sample.color = light.color * light.intensity;
+            sample.position = light.position;
+        }
+        case LIGHT_TYPE_POINT: {
+            // 点光源
+            // 在球形光源表面上采样一个点
+            let r1 = rand();
+            let r2 = rand();
+            let cosTheta = 2.0 * r1 - 1.0;
+            let sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+            let phi = 2.0 * PI * r2;
+            
+            let x = sinTheta * cos(phi);
+            let y = sinTheta * sin(phi);
+            let z = cosTheta;
+            
+            let randomDir = vec3f(x, y, z);
+            sample.direction = light.position + randomDir * light.radius;
+            
+            // PDF是球体表面积的倒数
+            sample.pdf = 1.0 / (4.0 * PI * light.radius * light.radius);
+            sample.color = light.color * light.intensity;
+            sample.position = light.position;
+        }
+        default: {
+            // 默认返回无效光源
+            sample.pdf = 0.0;
+            sample.direction = vec3f(0.0);
+            sample.color = vec3f(0.0);
+            sample.position = vec3f(0.0);
+        }
+    }
+    
+    return sample;
+}
+
+// MIS 权重计算
+fn powerHeuristic(nf: f32, fPdf: f32, ng: f32, gPdf: f32) -> f32 {
+    let f = nf * fPdf;
+    let g = ng * gPdf;
+    return (f * f) / (f * f + g * g);
+}
+
 fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray, front: bool) -> BSDFSample {
     var sample: BSDFSample;
 
@@ -423,7 +518,6 @@ fn constructTBN(N: vec3f) -> mat3x3f {
     return mat3x3f(T, B, N);
 }
 
-// 修改trace函数，移除PDF相关计算
 fn trace(ray: Ray) -> vec3f {
     var throughput = vec3f(1.0); 
     var result = vec3f(0.0);
