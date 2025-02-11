@@ -1,8 +1,8 @@
 # wgpu-path-tracing
 
-A path tracing implementation using WebGPU.
+A Path Tracing implementation using WebGPU.
 
-> This project is mainly used to explore the possibilities of modern Web graphics APIs in implementing Path Tracing. Due to the lack of support for [ray tracing pipelines](https://github.com/gpuweb/gpuweb/issues/535) and [bindless resources](https://github.com/gpuweb/gpuweb/issues/380), it can currently only be implemented based on compute shaders and texture atlases.
+> This project is mainly used to explore the possibilities of modern Web graphics APIs in implementing Path Tracing. Due to the lack of support for [ray tracing pipelines](https://github.com/gpuweb/gpuweb/issues/535) and [bindless resources](https://github.com/gpuweb/gpuweb/issues/380) in WebGPU, it can currently only be implemented based on compute shaders and texture atlases.
 
 ## Usage
 
@@ -23,6 +23,7 @@ npm run dev
 - [ ] Multiple Importance Sampling (MIS)
 - [x] PBR Materials (with Metallic/Roughness/Transmission/Emissive)
 - [ ] Environment Mapping
+- [x] Tone Mapping
 - [x] HDR support
 
 ## GLTF Extensions Supported
