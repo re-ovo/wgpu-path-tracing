@@ -2,6 +2,8 @@
 
 A path tracing implementation using WebGPU.
 
+> This project is mainly used to explore the possibilities of modern Web graphics APIs in implementing Path Tracing. Due to the lack of support for [ray tracing pipelines](https://github.com/gpuweb/gpuweb/issues/535) and [bindless resources](https://github.com/gpuweb/gpuweb/issues/380), it can currently only be implemented based on compute shaders and texture atlases.
+
 ## Usage
 
 ```bash
@@ -16,11 +18,12 @@ npm run dev
 
 - [x] GLTF Scene Loading
 - [x] Drag and Drop model file to load (asynchronous via web worker)
-- [x] GPU Time Profiler
+- [x] GPU and CPU Time Profiler
 - [x] BVH Acceleration (with SAH)
 - [ ] Multiple Importance Sampling (MIS)
 - [x] PBR Materials (with Metallic/Roughness/Transmission/Emissive)
 - [ ] Environment Mapping
+- [x] HDR support
 
 ## GLTF Extensions Supported
 
