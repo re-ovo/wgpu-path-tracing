@@ -465,87 +465,74 @@ fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray, front: bool) -
     }
 }
 
-fn evalBSDF(material: Material, normal: vec3f, currentRay: Ray, front: bool) -> BSDFSample {
-    var sample: BSDFSample;
-
-    // 计算视线方向（从表面点指向相机）
-    let V = -normalize(currentRay.direction);
-    let NdotV = max(dot(normal, V), 0.0);
+fn evalBSDF(material: Material, normal: vec3f, V: vec3f, L: vec3f, front: bool) -> vec4f {
+    // V is view direction (from surface to camera)
+    // L is light direction (from surface to light)
+    // Returns vec4f(bsdf_value.rgb, pdf)
+    let roughness = max(material.roughness, 0.04);
     
-    // 基础反射率F0，金属材质使用baseColor，非金属使用0.04
+    let H = normalize(V + L);
+    let NdotL = max(dot(normal, L), 0.0);
+    let NdotV = max(dot(normal, V), 0.0);
+    let NdotH = max(dot(normal, H), 0.0);
+    let VdotH = max(dot(V, H), 0.0);
+    
+    // 计算基础反射率 F0
     let F0 = mix(vec3f(0.04), material.baseColor, material.metallic);
     
-    // 根据材质属性计算各种BSDF的概率
-    let diffuseProb = (1.0 - material.metallic) * (1.0 - material.transmission);
-    let specularProb = material.metallic;
-    let transmissionProb = (1.0 - material.metallic) * material.transmission;
+    // 计算 Fresnel 项
+    let F = fresnelSchlick(VdotH, F0);
     
-    // 随机选择BSDF类型
-    let r = rand();
+    // 计算几何项
+    let G = geometrySmith(normal, V, L, roughness);
     
-    if (r < diffuseProb) {
-        // 漫反射采样
-        let localDir = randomCosineDirection();
-        let TBN = constructTBN(normal);
-        sample.direction = TBN * localDir;
-        
-        // 计算漫反射BRDF
-        let diffuseColor = material.baseColor * (1.0 - material.metallic);
-        sample.color = diffuseColor / PI;
-        sample.pdf = max(dot(normal, sample.direction), 0.0) / PI * diffuseProb;
-        
-    } else if (r < diffuseProb + specularProb) {
-        // 镜面反射采样（GGX）
-        let roughness = max(material.roughness, 0.04);
-        let N = sampleGGXNormal(normal, roughness);
-
-        sample.direction = reflect(-V, N);
-
-        // 计算半角向量
-        let H = normalize(V + sample.direction);
-
-        let NdotH = max(dot(N, H), 0.0);
-        let NdotL = max(dot(N, V), 0.0);
-        let HdotV = max(dot(H, sample.direction), 0.0);
-
-        // 计算镜面BRDF
-        let D = distributionGGX(N, H, roughness);
-        let G = geometrySmith(N, V, sample.direction, roughness);
-        let F = fresnelSchlick(HdotV, F0);
-
-        let color = (D * G * F) / max(4.0 * NdotV * NdotL, EPSILON);
-        sample.color = color;
-        sample.pdf = (D * NdotH / (4.0 * HdotV)) * specularProb;
-    } else {
-        // 透射采样
+    // 计算法线分布项
+    let D = distributionGGX(normal, H, roughness);
+    
+    // 计算漫反射项
+    let kD = (1.0 - F) * (1.0 - material.metallic);
+    let diffuse = kD * material.baseColor / PI;
+    
+    // 计算镜面反射项
+    let specular = F * G * D / max(4.0 * NdotV * NdotL, EPSILON);
+    
+    var bsdf = vec3f(0.0);
+    var pdf = 0.0;
+    
+    // 计算透射项
+    if (material.transmission > 0.0) {
         let eta = select(material.ior, 1.0 / material.ior, front);
-        let roughness = max(material.roughness, 0.04);
-
-        var N = sampleGGXNormal(normal, roughness);
-        N = select(-N, N, front);
-
-        let cosTheta = dot(N, V);
-        let sinTheta = sqrt(1.0 - cosTheta * cosTheta);
-        let cannotRefract = eta * sinTheta > 1.0;
-
-        // 计算Fresnel反射率
-        let F = reflectance(abs(cosTheta), eta);
+        let cosTheta = dot(normal, V);
+        let F_transmission = reflectance(abs(cosTheta), eta);
         
-        // 根据Fresnel和roughness决定是反射还是折射
-        if (cannotRefract || (rand() < F)) {
-            // 全反射或Fresnel反射
-            sample.direction = reflect(-V, N);
-            sample.color = material.baseColor;
+        if (front) {
+            // 入射
+            bsdf = (1.0 - F_transmission) * material.baseColor;
+            pdf = (1.0 - material.metallic) * material.transmission;
         } else {
-            // 折射
-            sample.direction = refract(-V, N, eta);
-            sample.color = material.baseColor;
+            // 出射
+            bsdf = (1.0 - F_transmission) * material.baseColor;
+            pdf = (1.0 - material.metallic) * material.transmission;
         }
+    } else {
+        // 漫反射和镜面反射的组合
+        bsdf = (diffuse + specular) * NdotL;
         
-        sample.pdf = transmissionProb;
+        // 计算 PDF
+        let diffuseProb = (1.0 - material.metallic) * (1.0 - material.transmission);
+        let specularProb = material.metallic;
+        
+        // 漫反射的 PDF (余弦加权)
+        let diffusePdf = NdotL / PI;
+        
+        // 镜面反射的 PDF
+        let specularPdf = D * NdotH / (4.0 * VdotH);
+        
+        // 混合 PDF
+        pdf = diffuseProb * diffusePdf + specularProb * specularPdf;
     }
     
-    return sample;
+    return vec4f(bsdf, max(pdf, EPSILON));
 }
 
 fn reflectance(cosTheta: f32, eta: f32) -> f32 {
@@ -591,8 +578,9 @@ fn trace(ray: Ray) -> vec3f {
             break;
         }
 
-        let bsdfSample = evalBSDF(material, hit.normal, currentRay, hit.isFront);
-        throughput *= bsdfSample.color / max(bsdfSample.pdf, EPSILON);
+        let dir = sampleBSDF(material, hit.normal, currentRay, hit.isFront);
+        let evalResult = evalBSDF(material, hit.normal, -normalize(currentRay.direction), dir, hit.isFront);
+        throughput *= evalResult.xyz / max(evalResult.w, EPSILON);
 
         // 提前退出条件
         if (bounce > 2) {
@@ -605,8 +593,8 @@ fn trace(ray: Ray) -> vec3f {
 
         // 更新光线方向
         currentRay = Ray(
-            hit.position + bsdfSample.direction * EPSILON,
-            normalize(bsdfSample.direction)
+            hit.position + dir * EPSILON,
+            normalize(dir)
         );
     }
 
