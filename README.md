@@ -22,6 +22,7 @@ npm run dev
 - [x] BVH Acceleration (with SAH)
 - [ ] Multiple Importance Sampling (MIS)
 - [x] PBR Materials (with Metallic/Roughness/Transmission/Emissive)
+- [ ] Texture support (based on texture atlas)
 - [ ] Environment Mapping
 - [x] Tone Mapping
 - [x] HDR support

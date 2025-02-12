@@ -15,6 +15,7 @@
     "@loaders.gl/gltf": "^4.3.3",
     "@tailwindcss/vite": "^4.0.5",
     "naga-oil-wasm": "^0.1.2",
+    "potpack": "^2.0.0",
     "react": "^19.0.0",
     "react-dnd": "^16.0.1",
     "react-dnd-html5-backend": "^16.0.1",
