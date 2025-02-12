@@ -554,11 +554,8 @@ fn trace(ray: Ray) -> vec3f {
         }
 
         // 更新光线方向
-        // 为了防止光线自相交，需要稍微偏移起点
-        // 如果新方向和法线同向，则向法线方向偏移，否则此时发生了折射，需要向相反方向偏移
-        let offset = select(-EPSILON, EPSILON, dot(bsdfSample.direction, hit.normal) > 0.0);
         currentRay = Ray(
-            hit.position + hit.normal * offset,
+            hit.position + bsdfSample.direction * EPSILON,
             normalize(bsdfSample.direction)
         );
     }
