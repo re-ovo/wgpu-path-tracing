@@ -415,7 +415,7 @@ fn powerHeuristic(nf: f32, fPdf: f32, ng: f32, gPdf: f32) -> f32 {
     return (f * f) / (f * f + g * g);
 }
 
-fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray, front: bool) -> BSDFSample {
+fn evalBSDF(material: Material, normal: vec3f, currentRay: Ray, front: bool) -> BSDFSample {
     var sample: BSDFSample;
 
     // 计算视线方向（从表面点指向相机）
@@ -541,7 +541,7 @@ fn trace(ray: Ray) -> vec3f {
             break;
         }
 
-        let bsdfSample = sampleBSDF(material, hit.normal, currentRay, hit.isFront);
+        let bsdfSample = evalBSDF(material, hit.normal, currentRay, hit.isFront);
         throughput *= bsdfSample.color / max(bsdfSample.pdf, EPSILON);
 
         // 提前退出条件
