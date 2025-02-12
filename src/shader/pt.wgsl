@@ -415,6 +415,56 @@ fn powerHeuristic(nf: f32, fPdf: f32, ng: f32, gPdf: f32) -> f32 {
     return (f * f) / (f * f + g * g);
 }
 
+fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray, front: bool) -> vec3f {
+    // 计算视线方向（从表面点指向相机）
+    let V = -normalize(currentRay.direction);
+    
+    // 根据材质属性计算各种BSDF的概率
+    let diffuseProb = (1.0 - material.metallic) * (1.0 - material.transmission);
+    let specularProb = material.metallic;
+    let transmissionProb = (1.0 - material.metallic) * material.transmission;
+    
+    // 随机选择BSDF类型
+    let r = rand();
+    
+    if (r < diffuseProb) {
+        // 漫反射采样 - 使用余弦加权的半球采样
+        let localDir = randomCosineDirection();
+        let TBN = constructTBN(normal);
+        return TBN * localDir;
+        
+    } else if (r < diffuseProb + specularProb) {
+        // 镜面反射采样
+        let roughness = max(material.roughness, 0.04);
+        let N = sampleGGXNormal(normal, roughness);
+        return reflect(-V, N);
+        
+    } else {
+        // 透射采样
+        let eta = select(material.ior, 1.0 / material.ior, front);
+        let roughness = max(material.roughness, 0.04);
+        
+        var N = sampleGGXNormal(normal, roughness);
+        N = select(-N, N, front);
+        
+        let cosTheta = dot(N, V);
+        let sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+        let cannotRefract = eta * sinTheta > 1.0;
+        
+        // 计算Fresnel反射率
+        let F = reflectance(abs(cosTheta), eta);
+        
+        // 根据Fresnel和roughness决定是反射还是折射
+        if (cannotRefract || (rand() < F)) {
+            // 全反射或Fresnel反射
+            return reflect(-V, N);
+        } else {
+            // 折射
+            return refract(-V, N, eta);
+        }
+    }
+}
+
 fn evalBSDF(material: Material, normal: vec3f, currentRay: Ray, front: bool) -> BSDFSample {
     var sample: BSDFSample;
 
