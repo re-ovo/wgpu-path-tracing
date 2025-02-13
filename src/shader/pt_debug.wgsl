@@ -64,12 +64,22 @@ struct BVHNode {
     triangleCount: u32,
 }
 
+struct Light {
+    position: vec3f, // (position or direction)
+    lightType: u32, // light type (align)
+    color: vec3f,
+    intensity: f32,
+    radius: f32, // only for point light
+    triangleIndex: u32, // only for emissive light
+}
+
 // 绑定组
 @group(0) @binding(0) var<storage, read_write> outputBuffer: array<vec3f>;
 @group(0) @binding(1) var<storage> triangles: array<Triangle>;
 @group(0) @binding(2) var<storage> materials: array<Material>;
 @group(0) @binding(3) var<uniform> camera: Camera;
 @group(0) @binding(4) var<storage> bvhNodes: array<BVHNode>;
+@group(0) @binding(5) var<storage> lights: array<Light>;
 
 const EPSILON = 1e-6;
 
@@ -78,11 +88,13 @@ fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
     var hit: HitInfo;
     hit.t = -1.0;
     
+    // Möller-Trumbore 算法实现
     let edge1 = triangle.v1 - triangle.v0;
     let edge2 = triangle.v2 - triangle.v0;
     let h = cross(ray.direction, edge2);
     let a = dot(edge1, h);
     
+    // 判断光线是否平行于三角形
     if (abs(a) < EPSILON) {
         return hit;
     }
@@ -91,6 +103,7 @@ fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
     let s = ray.origin - triangle.v0;
     let u = f * dot(s, h);
     
+    // 检查u是否在有效范围
     if (u < 0.0 || u > 1.0) {
         return hit;
     }
@@ -98,25 +111,59 @@ fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
     let q = cross(s, edge1);
     let v = f * dot(ray.direction, q);
     
+    // 检查v和u+v是否在有效范围
     if (v < 0.0 || u + v > 1.0) {
         return hit;
     }
     
+    // 计算交点距离
     let t = f * dot(edge2, q);
-    
     if (t > EPSILON) {
         hit.t = t;
-        hit.position = ray.origin + t * ray.direction;
+        hit.position = ray.origin + ray.direction * t;
         
-        // 计算重心坐标
+        // 计算几何法线
+        let edge1 = triangle.v1 - triangle.v0;
+        let edge2 = triangle.v2 - triangle.v0;
+        let geometryNormal = normalize(cross(edge1, edge2));
+        
+        // 计算插值法线
         let w = 1.0 - u - v;
-        hit.normal = normalize(w * triangle.n0 + u * triangle.n1 + v * triangle.n2);
-        hit.uv = w * triangle.uv0 + u * triangle.uv1 + v * triangle.uv2;
-        hit.materialIndex = triangle.materialIndex;
-
-        let geometryNormal = cross(edge1, edge2);
+        let interpolatedNormal = normalize(
+            triangle.n0 * w +
+            triangle.n1 * u +
+            triangle.n2 * v
+        );
+        
+        // 确定光线是从正面还是背面击中三角形
         let facingFront = dot(geometryNormal, ray.direction) < 0.0;
         hit.isFront = facingFront;
+        
+        // 检查插值法线是否与几何法线方向一致
+        // 如果不一致，使用几何法线
+        if (facingFront) {
+            // 如果是正面，插值法线应该朝向光线相反方向
+            if (dot(interpolatedNormal, -ray.direction) < 0.0) {
+                hit.normal = geometryNormal;
+            } else {
+                hit.normal = interpolatedNormal;
+            }
+        } else {
+            // 如果是背面，插值法线应该朝向光线方向
+            if (dot(interpolatedNormal, ray.direction) < 0.0) {
+                hit.normal = -geometryNormal;
+            } else {
+                hit.normal = interpolatedNormal;
+            }
+        }
+        
+        // 插值UV
+        hit.uv = 
+            triangle.uv0 * w +
+            triangle.uv1 * u +
+            triangle.uv2 * v;
+            
+        hit.materialIndex = triangle.materialIndex;
     }
     
     return hit;
@@ -195,6 +242,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     }
 
     let node = bvhNodes[0]; // force auto layout
+    let lgt = lights[0];
     
     // 生成光线
     let pixel = vec2f(f32(id.x) + 0.5, f32(id.y) + 0.5);
