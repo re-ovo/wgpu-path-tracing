@@ -107,6 +107,26 @@ export function prepareScene(gltf: GLTFPostprocessedExt): SceneData {
 
   const bvhNodes = buildBVH(allTriangles);
 
+  // 构建完BVH后，添加emissive light的triangleIndex
+  for (let i = 0; i < allTriangles.length; i++) {
+    const triangle = allTriangles[i];
+    if (triangle.materialIndex >= 0) {
+      const material = allMaterials[triangle.materialIndex];
+      if (vec3.length(material.emission) > 0.0) {
+        // 自发光材质
+        const lightCPU: LightCPU = {
+          position: vec3.create(0.0, 0.0, 0.0),
+          lightType: 0,
+          color: material.emission,
+          intensity: material.emissiveStrength,
+          radius: 0.0,
+          triangleIndex: i,
+        };
+        allLights.push(lightCPU);
+      }
+    }
+  }
+
   return {
     triangles: allTriangles,
     materials: allMaterials,
@@ -255,22 +275,6 @@ function processNode(
       });
 
       allTriangles.push(...triangles);
-
-      // check emissive light
-      if (vec3.length(material.emission) > 0.0) {
-        const startIndex = allTriangles.length - triangles.length;
-        for (let i = 0; i < triangles.length; i++) {
-          const lightCPU: LightCPU = {
-            position: vec3.create(0.0, 0.0, 0.0),
-            lightType: 0,
-            color: material.emission,
-            intensity: material.emissiveStrength,
-            radius: 0.0,
-            triangleIndex: startIndex + i,
-          };
-          allLights.push(lightCPU);
-        }
-      }
     }
   }
 }
