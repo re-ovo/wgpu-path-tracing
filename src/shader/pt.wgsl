@@ -34,7 +34,6 @@ struct Light {
     lightType: u32, // light type (align)
     color: vec3f,
     intensity: f32,
-    radius: f32, // only for point light
     triangleIndex: u32, // only for emissive light
 }
 
@@ -325,84 +324,125 @@ fn sampleGGXNormal(normal: vec3f, roughness: f32) -> vec3f {
 }
 
 struct LightSample {
-    position: vec3f,
-    pdf: f32,
-    direction: vec3f,
-    color: vec3f,
+    intensity: vec3f, // 光源颜色和强度
+    lightType: u32, // 光源类型
+    wi: vec3f, // 光源方向
+    pdf: f32, // 概率密度
 }
 
 // 采样光源
-fn sampleLight() -> LightSample {
+fn sampleLight(in: Ray, hitPosition: vec3f) -> LightSample {
     let light = lights[randInt(0u, arrayLength(&lights) - 1u)];
     let lightType = light.lightType;
     
     var sample: LightSample;
     
-    switch lightType {
-        case LIGHT_TYPE_EMISSIVE: {
-            // 采样发光三角形
-            let triangle = triangles[light.triangleIndex];
-            
-            // 在三角形上均匀采样一个点
-            let r1 = rand();
-            let r2 = rand();
-            let sqrtR1 = sqrt(r1);
-            
-            let u = 1.0 - sqrtR1;
-            let v = r2 * sqrtR1;
-            let w = 1.0 - u - v;
-            
-            // 计算采样点位置
-            sample.direction = triangle.v0 * w + triangle.v1 * u + triangle.v2 * v;
-            
-            // 计算三角形面积
-            let edge1 = triangle.v1 - triangle.v0;
-            let edge2 = triangle.v2 - triangle.v0;
-            let triangleArea = length(cross(edge1, edge2)) * 0.5;
-            
-            // PDF是三角形面积的倒数除以光源的总数
-            sample.pdf = 1.0 / (triangleArea * f32(arrayLength(&lights)));
-            
-            // 发光强度
-            let material = materials[triangle.materialIndex];
-            sample.color = material.emission * material.emissiveStrength;
-            sample.position = triangle.v0 * w + triangle.v1 * u + triangle.v2 * v;
-        }
-        case LIGHT_TYPE_DIRECTIONAL: {
-            // 方向光
-            sample.direction = -normalize(light.position);
-            sample.pdf = 1.0;
-            sample.color = light.color * light.intensity;
-            sample.position = light.position;
-        }
-        case LIGHT_TYPE_POINT: {
-            // 点光源
-            // 在球形光源表面上采样一个点
-            let r1 = rand();
-            let r2 = rand();
-            let cosTheta = 2.0 * r1 - 1.0;
-            let sinTheta = sqrt(1.0 - cosTheta * cosTheta);
-            let phi = 2.0 * PI * r2;
-            
-            let x = sinTheta * cos(phi);
-            let y = sinTheta * sin(phi);
-            let z = cosTheta;
-            
-            let randomDir = vec3f(x, y, z);
-            sample.direction = light.position + randomDir * light.radius;
-            
-            // PDF是球体表面积的倒数
-            sample.pdf = 1.0 / (4.0 * PI * light.radius * light.radius);
-            sample.color = light.color * light.intensity;
-            sample.position = light.position;
-        }
-        default: {
-            // 默认返回无效光源
+    sample.lightType = lightType;
+    sample.intensity = vec3f(0.0);
+    sample.wi = vec3f(0.0);
+    sample.pdf = 0.0;
+
+    if (lightType == LIGHT_TYPE_DIRECTIONAL) {
+        // 平行光采样
+        // 方向已经在light.position中定义
+        let wi = normalize(-light.position);
+        
+        // 检查是否有遮挡
+        let shadowRay = Ray(hitPosition + wi * EPSILON, wi);
+        let shadowHit = sceneIntersect(shadowRay);
+        
+        if (shadowHit.t > 0.0) {
+            // 有遮挡，返回零贡献
+            sample.intensity = vec3f(0.0);
+            sample.wi = wi;
             sample.pdf = 0.0;
-            sample.direction = vec3f(0.0);
-            sample.color = vec3f(0.0);
-            sample.position = vec3f(0.0);
+            return sample;
         }
+        
+        // 平行光不考虑距离衰减
+        sample.intensity = light.color * light.intensity;
+        sample.wi = wi;
+        // 平行光的PDF是1，因为只有一个方向
+        sample.pdf = 1.0 / f32(arrayLength(&lights)) * 1000.0;
+    } else if (lightType == LIGHT_TYPE_POINT) {
+        // 点光源采样
+        let toLight = light.position - hitPosition;
+        let dist = length(toLight);
+
+        // 如果距离大于100.0，则忽略该光源
+        if(dist > 100.0) {
+            return sample;
+        }
+    
+        let wi = toLight / dist;
+        
+        // 检查是否有遮挡
+        let shadowRay = Ray(hitPosition + wi * EPSILON, wi);
+        let shadowHit = sceneIntersect(shadowRay);
+        
+        if (shadowHit.t > 0.0 && shadowHit.t < dist - EPSILON * 2.0) {
+            // 有遮挡，返回零贡献
+            sample.intensity = vec3f(0.0);
+            sample.wi = wi;
+            sample.pdf = 0.0;
+            return sample;
+        }
+        
+        // 计算平方反比衰减
+        let attenuation = 1.0 / (dist * dist);
+        
+        // 设置光源样本
+        sample.intensity = light.color * light.intensity * attenuation;
+        sample.wi = wi;
+        // 点光源的PDF是1/numLights，因为只有一个采样点
+        sample.pdf = 1.0 / f32(arrayLength(&lights)) * 10000.0;
+    } else if (lightType == LIGHT_TYPE_EMISSIVE) {
+        // 发光三角形采样
+        let triangle = triangles[light.triangleIndex];
+        
+        // 均匀采样三角形上的一个点
+        let r1 = rand();
+        let r2 = rand();
+        let u = 1.0 - sqrt(r1);
+        let v = r2 * sqrt(r1);
+        let w = 1.0 - u - v;
+        
+        // 计算采样点的位置
+        let lightPos = triangle.v0 * w + triangle.v1 * u + triangle.v2 * v;
+        
+        // 计算三角形法线
+        let normal = normalize(triangle.n0 * w + triangle.n1 * u + triangle.n2 * v);
+        
+        // 计算从着色点到光源的方向和距离
+        let toLight = lightPos - hitPosition;
+        let dist = length(toLight);
+        let wi = toLight / dist;
+        
+        // 检查是否有遮挡
+        let shadowRay = Ray(hitPosition + wi * EPSILON, wi);
+        let shadowHit = sceneIntersect(shadowRay);
+        
+        if (shadowHit.t > 0.0 && shadowHit.t < dist - EPSILON * 2.0) {
+            // 有遮挡，返回零贡献
+            sample.intensity = vec3f(0.0);
+            sample.wi = wi;
+            sample.pdf = 0.0;
+            return sample;
+        }
+        
+        // 计算三角形面积
+        let edge1 = triangle.v1 - triangle.v0;
+        let edge2 = triangle.v2 - triangle.v0;
+        let triangleArea = length(cross(edge1, edge2)) * 0.5;
+        
+        // 计算光源的PDF
+        // PDF = (1/numLights) * (1/triangleArea) * (dist^2 / |cos(theta)|)
+        let cosTheta = abs(dot(normal, -wi));
+        sample.pdf = (1.0 / f32(arrayLength(&lights))) * (1.0 / triangleArea) * (dist * dist / max(cosTheta, EPSILON));
+        
+        // 设置光源样本
+        sample.intensity = light.color * light.intensity;
+        sample.wi = wi;
     }
     
     return sample;
@@ -555,6 +595,8 @@ fn constructTBN(N: vec3f) -> mat3x3f {
     return mat3x3f(T, B, N);
 }
 
+const DO_MIS = true;
+
 fn trace(ray: Ray) -> vec3f {
     var throughput = vec3f(1.0); 
     var result = vec3f(0.0);
@@ -570,6 +612,7 @@ fn trace(ray: Ray) -> vec3f {
 
         let material = materials[hit.materialIndex];
 
+        // 自发光
         if (any(material.emission > vec3f(0.0))) {
             // 添加基于距离的衰减
             let distance = hit.t;
@@ -578,11 +621,54 @@ fn trace(ray: Ray) -> vec3f {
             break;
         }
 
-        let dir = sampleBSDF(material, hit.normal, currentRay, hit.isFront);
-        let evalResult = evalBSDF(material, hit.normal, -normalize(currentRay.direction), dir, hit.isFront);
-        throughput *= evalResult.xyz / max(evalResult.w, EPSILON);
+        // 只对非透射表面进行直接光照采样
+        let transmissionProb = (1.0 - material.metallic) * material.transmission;
+        if (DO_MIS && transmissionProb < 0.9) {  // 如果不是主要透射材质
+            let lightSample = sampleLight(currentRay, hit.position);
+            if(lightSample.pdf > 0.0) {
+                let isDelta = lightSample.lightType == LIGHT_TYPE_DIRECTIONAL || lightSample.lightType == LIGHT_TYPE_POINT;
+                
+                // 计算BSDF
+                let V = -normalize(currentRay.direction);
+                let evalResult = evalBSDF(material, hit.normal, V, lightSample.wi, hit.isFront);
+                let bsdfValue = evalResult.xyz;
+                let bsdfPdf = evalResult.w;
 
-        // 提前退出条件
+                // 计算MIS权重
+                let misWeight = powerHeuristic(1.0, lightSample.pdf, 1.0, bsdfPdf);
+                
+                // 计算直接光照贡献
+                let directLight = lightSample.intensity * bsdfValue * misWeight / max(lightSample.pdf, EPSILON);
+                result += throughput * directLight;
+            }
+        }
+
+        // 间接光照 - BSDF采样
+        let bsdfDir = sampleBSDF(material, hit.normal, currentRay, hit.isFront);
+        let evalResult = evalBSDF(material, hit.normal, -normalize(currentRay.direction), bsdfDir, hit.isFront);
+        let bsdfValue = evalResult.xyz;
+        let bsdfPdf = evalResult.w;
+
+        if (bsdfPdf <= 0.0) {
+            break;
+        }
+
+        // 对于透射材质，需要考虑折射率变化导致的辐射度变化
+        if (DO_MIS && transmissionProb > 0.0) {
+            let eta = select(material.ior, 1.0 / material.ior, hit.isFront);
+            throughput *= vec3f(eta * eta);
+        }
+
+        // 更新光线
+        currentRay = Ray(
+            hit.position + bsdfDir * EPSILON,
+            normalize(bsdfDir)
+        );
+
+        // 更新吞吐量
+        throughput *= bsdfValue / max(bsdfPdf, EPSILON);
+
+        // 俄罗斯轮盘赌
         if (bounce > 2) {
             let p = max(max(throughput.x, throughput.y), throughput.z);
             if (rand() > p) {
@@ -590,12 +676,6 @@ fn trace(ray: Ray) -> vec3f {
             }
             throughput /= p;
         }
-
-        // 更新光线方向
-        currentRay = Ray(
-            hit.position + dir * EPSILON,
-            normalize(dir)
-        );
     }
 
     return result;
