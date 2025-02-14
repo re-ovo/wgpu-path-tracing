@@ -24,5 +24,4 @@ export interface GLTFLight {
   type: 'directional' | 'point' | 'spot';
   color?: [number, number, number];
   intensity?: number;
-  range?: number;
 }
