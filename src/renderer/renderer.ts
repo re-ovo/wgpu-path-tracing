@@ -159,11 +159,11 @@ export class Renderer {
 
   private setupCamera() {
     this.camera = {
-      position: vec3.create(0, 1.0, 2.0),
+      position: vec3.create(0, 1.0, 2.8),
       forward: vec3.create(0, 0, -1),
       right: vec3.create(1, 0, 0),
       up: vec3.create(0, 1, 0),
-      fov: Math.PI / 2,
+      fov: Math.PI / 3,
       aspect: this.context.canvas.width / this.context.canvas.height,
       width: this.context.canvas.width,
       height: this.context.canvas.height,
