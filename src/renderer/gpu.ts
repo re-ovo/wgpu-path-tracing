@@ -47,7 +47,6 @@ export interface LightCPU {
   lightType: number;
   color: Vec3;
   intensity: number;
-  radius: number;
   triangleIndex: number;
 }
 
@@ -119,7 +118,6 @@ export function prepareScene(gltf: GLTFPostprocessedExt): SceneData {
           lightType: 0,
           color: material.emission,
           intensity: material.emissiveStrength,
-          radius: 0.0,
           triangleIndex: i,
         };
         allLights.push(lightCPU);
@@ -192,29 +190,30 @@ function processNode(
     const lightIndex = node.light;
     const light = gltf.lights[lightIndex];
     if (light.type === 'directional') {
+      const rotation = quat.fromMat(worldMatrix);
       const lightCPU: LightCPU = {
-        position: vec3.create(0.0, 0.0, 0.0),
+        position: vec3.transformQuat(vec3.create(0.0, 0.0, -1.0), rotation),
         lightType: 1,
         color: light.color
           ? vec3.create(light.color[0], light.color[1], light.color[2])
           : vec3.create(1.0, 1.0, 1.0),
         intensity: light.intensity ?? 1.0,
-        radius: 0.0,
         triangleIndex: 0,
       };
       allLights.push(lightCPU);
+      console.log(`directional light: `, lightCPU);
     } else if (light.type === 'point') {
       const lightCPU: LightCPU = {
-        position: vec3.create(0.0, 0.0, 0.0),
+        position: vec3.transformMat4(vec3.create(0.0, 0.0, 0.0), worldMatrix),
         lightType: 2,
         color: light.color
           ? vec3.create(light.color[0], light.color[1], light.color[2])
           : vec3.create(1.0, 1.0, 1.0),
         intensity: light.intensity ?? 1.0,
-        radius: light.range ?? 0.0,
         triangleIndex: 0,
       };
       allLights.push(lightCPU);
+      console.log(`point light: `, lightCPU);
     } else {
       console.warn(`Unsupported light type: ${light.type}`);
     }
