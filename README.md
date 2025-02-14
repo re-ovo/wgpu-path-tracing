@@ -66,3 +66,10 @@ There are two main passes:
 
 - [webgpu-utils](https://github.com/greggman/webgpu-utils)
 - [@loaders.gl/gltf](https://www.npmjs.com/package/@loaders.gl/gltf)
+- [potpack](https://github.com/mapbox/potpack)
+
+## References
+
+- [Demystifying multiple importance sampling](https://lisyarus.github.io/blog/posts/multiple-importance-sampling.html#section-monte-carlo-integration)
+- [sample microfacet brdf](https://agraphicsguynotes.com/posts/sample_microfacet_brdf/)
+- [RayTracing (by pozero)](https://github.com/pozero/RayTracing)
