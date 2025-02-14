@@ -4,6 +4,8 @@ A Path Tracing implementation using WebGPU.
 
 > This project is mainly used to explore the possibilities of modern Web graphics APIs in implementing Path Tracing. Due to the lack of support for [ray tracing pipelines](https://github.com/gpuweb/gpuweb/issues/535) and [bindless resources](https://github.com/gpuweb/gpuweb/issues/380) in WebGPU, it can currently only be implemented based on compute shaders and texture atlases.
 
+<img src="/docs/img/screenshot.png" alt="screenshot" width="400" />
+
 ## Usage
 
 ```bash
