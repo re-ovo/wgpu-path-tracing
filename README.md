@@ -73,3 +73,4 @@ There are two main passes:
 - [Demystifying multiple importance sampling](https://lisyarus.github.io/blog/posts/multiple-importance-sampling.html#section-monte-carlo-integration)
 - [sample microfacet brdf](https://agraphicsguynotes.com/posts/sample_microfacet_brdf/)
 - [RayTracing (by pozero)](https://github.com/pozero/RayTracing)
+- [BVH with SAH](https://www.cnblogs.com/lookof/p/3546320.html)
