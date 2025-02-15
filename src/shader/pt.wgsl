@@ -759,7 +759,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     );
     
     let ray = Ray(camera.position, rayDir);
-    var color = trace(ray);
+    var color = min(trace(ray), vec3f(2.5)); // avoid fireflies, clamp to 2.5
   
     let bufferIndex = id.y * camera.width + id.x;
     if (camera.frameIndex > 0u) {
