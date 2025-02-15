@@ -4,9 +4,9 @@ A experimental Path Tracing implementation using WebGPU.
 
 > This project is mainly used to explore the possibilities of modern Web graphics APIs in implementing Path Tracing. Due to the lack of support for [ray tracing pipelines](https://github.com/gpuweb/gpuweb/issues/535) and [bindless resources](https://github.com/gpuweb/gpuweb/issues/380) in WebGPU, it can currently only be implemented based on compute shaders and texture atlases.
 
-| Cornell (No MIS/64spp)                                         | Cornell (MIS/64spp)                                 | Cornell (MIS/512spp)                                  |
-| -------------------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------------- |
-| ![Cornell (No MIS/64spp)](/docs/img/cornell_64spp_mis_off.png) | ![Cornell (MIS/64spp)](/docs/img/cornell_64spp.png) | ![Cornell (MIS/512spp)](/docs/img/cornell_512spp.png) |
+| Cornell (No MIS/64spp)                                            | Cornell (MIS/64spp)                                    | Cornell (MIS/512spp)                                     |
+| ----------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------- |
+| ![CornellBox (No MIS/64spp)](/docs/img/cornell_64spp_mis_off.png) | ![CornellBox (MIS/64spp)](/docs/img/cornell_64spp.png) | ![CornellBox (MIS/512spp)](/docs/img/cornell_512spp.png) |
 
 ## Usage
 
