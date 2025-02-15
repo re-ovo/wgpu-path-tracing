@@ -126,19 +126,13 @@ fn randInt(min: u32, max: u32) -> u32 {
 }
 
 fn getTextureColor(texture: AtlasTexture, uv: vec2f, fallback: vec4f) -> vec4f {
-    // 如果纹理宽度或高度为0，返回默认值
-    if (texture.w == 0u || texture.h == 0u) {
-        return fallback;
-    }
-    
     // 计算纹理在图集中的实际UV坐标
     let atlasUV = vec2f(
         (f32(texture.x) + (uv.x % 1.0) * f32(texture.w)),
         (f32(texture.y) + (uv.y % 1.0) * f32(texture.h))
     );
     
-    // 采样纹理
-    return textureLoad(atlas, vec2u(atlasUV), 0);
+    return select(textureLoad(atlas, vec2u(atlasUV), 0), fallback, texture.w == 0u || texture.h == 0u);
 }
 
 // 光线-三角形相交测试
@@ -684,8 +678,6 @@ fn trace(ray: Ray) -> vec3f {
         if (DO_MIS && transmissionProb < 0.9) {  // 如果不是主要透射材质
             let lightSample = sampleLight(currentRay, hit.position);
             if(lightSample.pdf > 0.0) {
-                let isDelta = lightSample.lightType == LIGHT_TYPE_DIRECTIONAL || lightSample.lightType == LIGHT_TYPE_POINT;
-                
                 // 计算BSDF
                 let V = -normalize(currentRay.direction);
                 let evalResult = evalBSDF(hit, hit.normal, V, lightSample.wi, hit.isFront);
