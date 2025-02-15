@@ -8,23 +8,26 @@ import { mat4, vec3 } from 'wgpu-matrix';
 import blitShaderSource from '../shader/blit.wgsl?raw';
 import ptShaderSource from '../shader/pt.wgsl?raw';
 import { WebGPUProfiler } from '../utils/profiler';
-import { CameraCPU, SceneData } from './gpu';
+import { PackedAtlas } from './atlas';
 import { Controller } from './controller';
-import SceneWorker from '../workers/scene.worker.ts?worker';
-import { toast } from 'sonner';
+import { CameraCPU, SceneData } from './gpu';
+import { loadModel } from './loader';
 
 const MAX_FRAMES: number = -1;
 
 export class Renderer {
   private device: GPUDevice;
   private context: GPUCanvasContext;
-  private sceneData!: SceneData;
   private frameIndex: number = 0;
 
   private profiler?: WebGPUProfiler;
   private statsPane: Pane;
 
   private onUpdateTasks: ((deltaTime: number) => void)[] = [];
+
+  // Scene data
+  private sceneData!: SceneData;
+  private atlas!: PackedAtlas;
 
   // Pipelines
   private pathTracePipeline!: GPUComputePipeline;
@@ -37,6 +40,7 @@ export class Renderer {
   private cameraBuffer!: GPUBuffer;
   private bvhBuffer!: GPUBuffer;
   private lightsBuffer!: GPUBuffer;
+  private atlasTexture!: GPUTextureView;
   private computeBindGroup!: GPUBindGroup;
   private blitBindGroup!: GPUBindGroup;
 
@@ -124,37 +128,9 @@ export class Renderer {
   }
 
   public async loadModel(modelPath: string) {
-    const promise = new Promise<void>((resolve, reject) => {
-      const worker = new SceneWorker();
-      worker.onmessage = (e: MessageEvent) => {
-        const { type, data, error } = e.data;
-
-        if (type === 'error') {
-          reject(new Error(error));
-          return;
-        }
-
-        this.sceneData = data;
-
-        // Reset frame index when loading new model
-        this.frameIndex = 0;
-        this.camera.frameIndex = 0;
-
-        // Recreate buffers and bindings for new model
-        this.createBuffers();
-        this.createBindGroups();
-
-        resolve();
-      };
-
-      worker.postMessage({ modelPath });
-    });
-    toast.promise(promise, {
-      loading: 'Loading...',
-      success: 'Loaded',
-      error: 'Failed to load model',
-    });
-    return promise;
+    [this.sceneData, this.atlas] = await loadModel(modelPath);
+    this.createBuffers();
+    this.createBindGroups();
   }
 
   private setupCamera() {
@@ -263,6 +239,24 @@ export class Renderer {
 
   private createBuffers() {
     const ptShaderDefs = makeShaderDataDefinitions(ptShaderSource);
+
+    // Create atlas texture
+    const atlasTexture = this.device.createTexture({
+      size: [this.atlas.texture.width, this.atlas.texture.height],
+      format: 'rgba16float',
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    this.atlasTexture = atlasTexture.createView();
+    this.device.queue.copyExternalImageToTexture(
+      {
+        source: this.atlas.texture,
+      },
+      { texture: atlasTexture },
+      { width: this.atlas.texture.width, height: this.atlas.texture.height },
+    );
 
     // Create camera buffer
     const cameraValues = makeStructuredView(ptShaderDefs.uniforms.camera);
@@ -380,6 +374,7 @@ export class Renderer {
         { binding: 3, resource: { buffer: this.cameraBuffer } },
         { binding: 4, resource: { buffer: this.bvhBuffer } },
         { binding: 5, resource: { buffer: this.lightsBuffer } },
+        { binding: 6, resource: this.atlasTexture },
       ],
     });
 

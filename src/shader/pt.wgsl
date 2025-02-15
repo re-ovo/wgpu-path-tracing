@@ -2,6 +2,13 @@ const PI = 3.14159265359;
 const EPSILON = 1e-6;
 const MAX_BOUNCES = 8;
 
+struct AtlasTexture {
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+}
+
 struct Material {
     baseColor: vec3f,
     metallic: f32,
@@ -10,6 +17,10 @@ struct Material {
     emissiveStrength: f32,
     ior: f32,
     transmission: f32,
+    albedo: AtlasTexture,
+    normal: AtlasTexture,
+    pbr: AtlasTexture,
+    emissive: AtlasTexture,
 }
 
 struct Triangle {
@@ -84,6 +95,7 @@ struct HitInfo {
 @group(0) @binding(3) var<uniform> camera: Camera;
 @group(0) @binding(4) var<storage> bvhNodes: array<BVHNode>;
 @group(0) @binding(5) var<storage> lights: array<Light>;
+@group(0) @binding(6) var atlas: texture_2d<f32>;
 
 // 随机数生成
 var<private> rngState: u32;
@@ -101,6 +113,22 @@ fn rand() -> f32 {
 
 fn randInt(min: u32, max: u32) -> u32 {
     return min + u32(rand() * f32(max - min + 1));
+}
+
+fn getTextureColor(texture: AtlasTexture, uv: vec2f, fallback: vec4f) -> vec4f {
+    // 如果纹理宽度或高度为0，返回默认值
+    if (texture.w == 0u || texture.h == 0u) {
+        return fallback;
+    }
+    
+    // 计算纹理在图集中的实际UV坐标
+    let atlasUV = vec2f(
+        (f32(texture.x) + uv.x * f32(texture.w)),
+        (f32(texture.y) + uv.y * f32(texture.h))
+    );
+    
+    // 采样纹理
+    return textureLoad(atlas, vec2u(atlasUV), 0);
 }
 
 // 光线-三角形相交测试
@@ -142,48 +170,60 @@ fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
         hit.t = t;
         hit.position = ray.origin + ray.direction * t;
         
+        // 计算重心坐标
+        let w = 1.0 - u - v;
+        
         // 计算几何法线
-        let edge1 = triangle.v1 - triangle.v0;
-        let edge2 = triangle.v2 - triangle.v0;
         let geometryNormal = normalize(cross(edge1, edge2));
         
         // 计算插值法线
-        let w = 1.0 - u - v;
         let interpolatedNormal = normalize(
             triangle.n0 * w +
             triangle.n1 * u +
             triangle.n2 * v
         );
         
+        // 计算切线空间
+        // 计算切线和副切线
+        let deltaPos1 = triangle.v1 - triangle.v0;
+        let deltaPos2 = triangle.v2 - triangle.v0;
+        let deltaUV1 = triangle.uv1 - triangle.uv0;
+        let deltaUV2 = triangle.uv2 - triangle.uv0;
+        
+        let r = 1.0 / (deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x);
+        let tangent = normalize((deltaPos1 * deltaUV2.y - deltaPos2 * deltaUV1.y) * r);
+        let bitangent = normalize((deltaPos2 * deltaUV1.x - deltaPos1 * deltaUV2.x) * r);
+        
+        // 构建TBN矩阵
+        let N = interpolatedNormal;
+        let T = normalize(tangent - N * dot(N, tangent));
+        let B = normalize(cross(N, T));
+        let TBN = mat3x3f(T, B, N);
+        
+        // 计算插值UV坐标
+        hit.uv = triangle.uv0 * w + triangle.uv1 * u + triangle.uv2 * v;
+        hit.materialIndex = triangle.materialIndex;
+        
         // 确定光线是从正面还是背面击中三角形
         let facingFront = dot(geometryNormal, ray.direction) < 0.0;
         hit.isFront = facingFront;
         
-        // 检查插值法线是否与几何法线方向一致
-        // 如果不一致，使用几何法线
-        if (facingFront) {
-            // 如果是正面，插值法线应该朝向光线相反方向
-            if (dot(interpolatedNormal, -ray.direction) < 0.0) {
-                hit.normal = geometryNormal;
-            } else {
-                hit.normal = interpolatedNormal;
-            }
-        } else {
-            // 如果是背面，插值法线应该朝向光线方向
-            if (dot(interpolatedNormal, ray.direction) < 0.0) {
-                hit.normal = -geometryNormal;
-            } else {
-                hit.normal = interpolatedNormal;
-            }
-        }
+        // 获取材质
+        let material = materials[hit.materialIndex];
         
-        // 插值UV
-        hit.uv = 
-            triangle.uv0 * w +
-            triangle.uv1 * u +
-            triangle.uv2 * v;
+        // 采样法线贴图
+        let normalMap = getTextureColor(material.normal, hit.uv, vec4f(0.5, 0.5, 1.0, 1.0)).xyz;
+        if (normalMap.x != 0.5 || normalMap.y != 0.5 || normalMap.z != 1.0) {
+            // 将法线从 [0,1] 转换到 [-1,1] 空间
+            let tangentNormal = normalMap * 2.0 - 1.0;
             
-        hit.materialIndex = triangle.materialIndex;
+            // 将切线空间法线转换到世界空间
+            let worldNormal = normalize(TBN * tangentNormal);
+
+            hit.normal = worldNormal;
+        } else {
+            hit.normal = interpolatedNormal;
+        }
     }
     
     return hit;
@@ -505,11 +545,15 @@ fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray, front: bool) -
     }
 }
 
-fn evalBSDF(material: Material, normal: vec3f, V: vec3f, L: vec3f, front: bool) -> vec4f {
+fn evalBSDF(material: Material, hitInfo: HitInfo, normal: vec3f, V: vec3f, L: vec3f, front: bool) -> vec4f {
     // V is view direction (from surface to camera)
     // L is light direction (from surface to light)
     // Returns vec4f(bsdf_value.rgb, pdf)
-    let roughness = max(material.roughness, 0.04);
+
+    let albedo = getTextureColor(material.albedo, hitInfo.uv, vec4f(1.0)).xyz * material.baseColor;
+    let pbr = getTextureColor(material.pbr, hitInfo.uv, vec4f(1.0)).xyz;
+    let metallic = pbr.x * material.metallic;
+    let roughness = max(pbr.y, 0.04);
     
     let H = normalize(V + L);
     let NdotL = max(dot(normal, L), 0.0);
@@ -518,7 +562,7 @@ fn evalBSDF(material: Material, normal: vec3f, V: vec3f, L: vec3f, front: bool) 
     let VdotH = max(dot(V, H), 0.0);
     
     // 计算基础反射率 F0
-    let F0 = mix(vec3f(0.04), material.baseColor, material.metallic);
+    let F0 = mix(vec3f(0.04), albedo, metallic);
     
     // 计算 Fresnel 项
     let F = fresnelSchlick(VdotH, F0);
@@ -530,8 +574,8 @@ fn evalBSDF(material: Material, normal: vec3f, V: vec3f, L: vec3f, front: bool) 
     let D = distributionGGX(normal, H, roughness);
     
     // 计算漫反射项
-    let kD = (1.0 - F) * (1.0 - material.metallic);
-    let diffuse = kD * material.baseColor / PI;
+    let kD = (1.0 - F) * (1.0 - metallic);
+    let diffuse = kD * albedo / PI;
     
     // 计算镜面反射项
     let specular = F * G * D / max(4.0 * NdotV * NdotL, EPSILON);
@@ -547,20 +591,20 @@ fn evalBSDF(material: Material, normal: vec3f, V: vec3f, L: vec3f, front: bool) 
         
         if (front) {
             // 入射
-            bsdf = (1.0 - F_transmission) * material.baseColor;
-            pdf = (1.0 - material.metallic) * material.transmission;
+            bsdf = (1.0 - F_transmission) * albedo;
+            pdf = (1.0 - metallic) * material.transmission;
         } else {
             // 出射
-            bsdf = (1.0 - F_transmission) * material.baseColor;
-            pdf = (1.0 - material.metallic) * material.transmission;
+            bsdf = (1.0 - F_transmission) * albedo;
+            pdf = (1.0 - metallic) * material.transmission;
         }
     } else {
         // 漫反射和镜面反射的组合
         bsdf = (diffuse + specular) * NdotL;
         
         // 计算 PDF
-        let diffuseProb = (1.0 - material.metallic) * (1.0 - material.transmission);
-        let specularProb = material.metallic;
+        let diffuseProb = (1.0 - metallic) * (1.0 - material.transmission);
+        let specularProb = metallic;
         
         // 漫反射的 PDF (余弦加权)
         let diffusePdf = NdotL / PI;
@@ -630,7 +674,7 @@ fn trace(ray: Ray) -> vec3f {
                 
                 // 计算BSDF
                 let V = -normalize(currentRay.direction);
-                let evalResult = evalBSDF(material, hit.normal, V, lightSample.wi, hit.isFront);
+                let evalResult = evalBSDF(material, hit, hit.normal, V, lightSample.wi, hit.isFront);
                 let bsdfValue = evalResult.xyz;
                 let bsdfPdf = evalResult.w;
 
@@ -645,7 +689,7 @@ fn trace(ray: Ray) -> vec3f {
 
         // 间接光照 - BSDF采样
         let bsdfDir = sampleBSDF(material, hit.normal, currentRay, hit.isFront);
-        let evalResult = evalBSDF(material, hit.normal, -normalize(currentRay.direction), bsdfDir, hit.isFront);
+        let evalResult = evalBSDF(material, hit, hit.normal, -normalize(currentRay.direction), bsdfDir, hit.isFront);
         let bsdfValue = evalResult.xyz;
         let bsdfPdf = evalResult.w;
 

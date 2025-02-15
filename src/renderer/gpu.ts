@@ -3,6 +3,7 @@ import {
   GLTFNodePostprocessed,
 } from '@loaders.gl/gltf';
 import { Mat4, mat4, quat, vec2, Vec2, vec3, Vec3 } from 'wgpu-matrix';
+import { AtlasTexture, MaterialTextures, PackedAtlas } from './atlas';
 import { buildBVH, BVHNode } from './bvh';
 import { GLTFNodePostprocessedExt, GLTFPostprocessedExt } from './loader';
 
@@ -14,6 +15,10 @@ export interface MaterialCPU {
   emissiveStrength: number;
   ior: number;
   transmission: number;
+  albedo: AtlasTexture;
+  normal: AtlasTexture;
+  pbr: AtlasTexture;
+  emissive: AtlasTexture;
 }
 
 export interface TriangleCPU {
@@ -57,7 +62,10 @@ export interface SceneData {
   lights: LightCPU[];
 }
 
-export function prepareScene(gltf: GLTFPostprocessedExt): SceneData {
+export function prepareScene(
+  gltf: GLTFPostprocessedExt,
+  atlas: Map<GLTFMaterialPostprocessed, MaterialTextures>,
+): SceneData {
   const allTriangles: TriangleCPU[] = [];
   const allMaterials: MaterialCPU[] = [];
   const allLights: LightCPU[] = [];
@@ -94,6 +102,7 @@ export function prepareScene(gltf: GLTFPostprocessedExt): SceneData {
   for (const node of gltf.nodes) {
     processNode(
       gltf,
+      atlas,
       node,
       allTriangles,
       allMaterials,
@@ -177,6 +186,7 @@ function extractNodeMatrix(node: GLTFNodePostprocessed): Mat4 {
 
 function processNode(
   gltf: GLTFPostprocessedExt,
+  atlas: Map<GLTFMaterialPostprocessed, MaterialTextures>,
   node: GLTFNodePostprocessedExt,
   allTriangles: TriangleCPU[],
   allMaterials: MaterialCPU[],
@@ -265,7 +275,7 @@ function processNode(
       );
 
       // build material
-      const material = buildMaterial(primitive.material);
+      const material = buildMaterial(primitive.material, atlas);
       allMaterials.push(material);
 
       // apply material to triangles
@@ -336,6 +346,7 @@ function buildTriangles(
 
 function buildMaterial(
   material: GLTFMaterialPostprocessed | undefined,
+  atlas: Map<GLTFMaterialPostprocessed, MaterialTextures>,
 ): MaterialCPU {
   if (!material) {
     return {
@@ -346,6 +357,10 @@ function buildMaterial(
       roughness: 0.1,
       ior: 1.5,
       transmission: 0.0,
+      albedo: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+      normal: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+      pbr: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+      emissive: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
     };
   }
 
@@ -372,5 +387,14 @@ function buildMaterial(
     emissiveStrength,
     ior,
     transmission,
+    albedo: atlas.get(material)?.albedo ?? { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+    normal: atlas.get(material)?.normal ?? { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+    pbr: atlas.get(material)?.pbr ?? { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+    emissive: atlas.get(material)?.emissive ?? {
+      x: 0.0,
+      y: 0.0,
+      w: 0.0,
+      h: 0.0,
+    },
   };
 }

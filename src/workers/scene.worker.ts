@@ -1,15 +1,11 @@
 import { prepareScene } from '../renderer/gpu';
-import { loadGLTF } from '../renderer/loader';
 
 self.onmessage = async (e: MessageEvent) => {
-  const { modelPath } = e.data;
+  const { gltf, atlas } = e.data;
 
   try {
-    // Load GLTF model
-    const gltf = await loadGLTF(modelPath);
-
     // Prepare scene data
-    const sceneData = prepareScene(gltf);
+    const sceneData = prepareScene(gltf, atlas);
 
     // Send the prepared scene data back to main thread
     self.postMessage({
