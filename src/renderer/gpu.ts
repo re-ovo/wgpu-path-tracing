@@ -3,7 +3,7 @@ import {
   GLTFNodePostprocessed,
 } from '@loaders.gl/gltf';
 import { Mat4, mat4, quat, vec2, Vec2, vec3, Vec3 } from 'wgpu-matrix';
-import { AtlasTexture, MaterialTextures, PackedAtlas } from './atlas';
+import { AtlasTexture, MaterialTextures } from './atlas';
 import { buildBVH, BVHNode } from './bvh';
 import { GLTFNodePostprocessedExt, GLTFPostprocessedExt } from './loader';
 
@@ -18,7 +18,6 @@ export interface MaterialCPU {
   albedo: AtlasTexture;
   normal: AtlasTexture;
   pbr: AtlasTexture;
-  emissive: AtlasTexture;
 }
 
 export interface TriangleCPU {
@@ -396,11 +395,5 @@ function buildMaterial(
     albedo: atlas.get(material)?.albedo ?? { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
     normal: atlas.get(material)?.normal ?? { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
     pbr: atlas.get(material)?.pbr ?? { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
-    emissive: atlas.get(material)?.emissive ?? {
-      x: 0.0,
-      y: 0.0,
-      w: 0.0,
-      h: 0.0,
-    },
   };
 }
