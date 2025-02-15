@@ -15,9 +15,9 @@ export interface MaterialCPU {
   emissiveStrength: number;
   ior: number;
   transmission: number;
-  albedo: AtlasTexture;
-  normal: AtlasTexture;
-  pbr: AtlasTexture;
+  albedoMap: AtlasTexture;
+  normalMap: AtlasTexture;
+  pbrMap: AtlasTexture;
   emissiveMap: AtlasTexture;
 }
 
@@ -363,9 +363,9 @@ function buildMaterial(
       roughness: 0.1,
       ior: 1.5,
       transmission: 0.0,
-      albedo: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
-      normal: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
-      pbr: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+      albedoMap: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+      normalMap: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+      pbrMap: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
       emissiveMap: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
     };
   }
@@ -393,9 +393,19 @@ function buildMaterial(
     emissiveStrength,
     ior,
     transmission,
-    albedo: atlas.get(material)?.albedo ?? { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
-    normal: atlas.get(material)?.normal ?? { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
-    pbr: atlas.get(material)?.pbr ?? { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+    albedoMap: atlas.get(material)?.albedoMap ?? {
+      x: 0.0,
+      y: 0.0,
+      w: 0.0,
+      h: 0.0,
+    },
+    normalMap: atlas.get(material)?.normalMap ?? {
+      x: 0.0,
+      y: 0.0,
+      w: 0.0,
+      h: 0.0,
+    },
+    pbrMap: atlas.get(material)?.pbrMap ?? { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
     emissiveMap: atlas.get(material)?.emissiveMap ?? {
       x: 0.0,
       y: 0.0,

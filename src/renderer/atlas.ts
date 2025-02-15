@@ -11,9 +11,9 @@ export interface PackedAtlas {
 }
 
 export interface MaterialTextures {
-  albedo: AtlasTexture;
-  normal: AtlasTexture;
-  pbr: AtlasTexture;
+  albedoMap: AtlasTexture;
+  normalMap: AtlasTexture;
+  pbrMap: AtlasTexture;
   emissiveMap: AtlasTexture;
 }
 
@@ -41,9 +41,9 @@ export function packing(scene: GLTFPostprocessedExt) {
     const emissionBox = toBox(emissionTexture?.texture);
 
     materials.set(material, {
-      albedo: albedoBox,
-      normal: normalBox,
-      pbr: pbrBox,
+      albedoMap: albedoBox,
+      normalMap: normalBox,
+      pbrMap: pbrBox,
       emissiveMap: emissionBox,
     });
 
@@ -142,15 +142,15 @@ function buildCanvas(
   };
 
   for (const [material, textures] of materials.entries()) {
-    const { albedo, normal, pbr, emissiveMap } = textures;
+    const { albedoMap, normalMap, pbrMap, emissiveMap } = textures;
     drawTexture(
-      albedo,
+      albedoMap,
       material.pbrMetallicRoughness?.baseColorTexture?.texture,
       true, // 标记为albedo纹理
     );
-    drawTexture(normal, material.normalTexture?.texture);
+    drawTexture(normalMap, material.normalTexture?.texture);
     drawTexture(
-      pbr,
+      pbrMap,
       material.pbrMetallicRoughness?.metallicRoughnessTexture?.texture,
     );
     drawTexture(emissiveMap, material.emissiveTexture?.texture);

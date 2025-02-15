@@ -41,9 +41,9 @@ struct Material {
     emissiveStrength: f32,
     ior: f32,
     transmission: f32,
-    albedo: AtlasTexture,
-    normal: AtlasTexture,
-    pbr: AtlasTexture,
+    albedoMap: AtlasTexture,
+    normalMap: AtlasTexture,
+    pbrMap: AtlasTexture,
     emissiveMap: AtlasTexture,
 }
 
@@ -202,10 +202,10 @@ fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
         let material = materials[hit.materialIndex];
         
         // 采样纹理并填充材质信息
-        let albedoValue = getTextureColor(material.albedo, hit.uv, vec4f(1.0));
+        let albedoValue = getTextureColor(material.albedoMap, hit.uv, vec4f(1.0));
         hit.albedo = albedoValue.xyz * material.baseColor;
         hit.alpha = albedoValue.w;
-        let pbrValue = getTextureColor(material.pbr, hit.uv, vec4f(1.0));
+        let pbrValue = getTextureColor(material.pbrMap, hit.uv, vec4f(1.0));
         hit.metallic = pbrValue.z * material.metallic;
         hit.roughness = max(pbrValue.y * material.roughness, 0.04);
         hit.transmission = material.transmission;
@@ -221,7 +221,7 @@ fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
         }
         
         // 采样法线贴图
-        let normalMap = getTextureColor(material.normal, hit.uv, vec4f(0.5, 0.5, 1.0, 1.0)).xyz;
+        let normalMap = getTextureColor(material.normalMap, hit.uv, vec4f(0.5, 0.5, 1.0, 1.0)).xyz;
         if (normalMap.x != 0.5 || normalMap.y != 0.5 || normalMap.z != 1.0) {
             // 将法线从 [0,1] 转换到 [-1,1] 空间
             let tangentNormal = normalMap * 2.0 - 1.0;
