@@ -299,10 +299,10 @@ function buildTriangles(
   position: Float32Array,
   normal: Float32Array,
   uv: Float32Array,
-  index: Uint16Array,
+  index: Uint16Array | Uint32Array,
 ) {
-  if (!index || index instanceof Uint32Array) {
-    throw new Error('Uint32Array is not supported yet');
+  if (!index) {
+    throw new Error('No index found');
   }
   uv = uv ?? new Float32Array(position.length); // default uv (zero)
 
