@@ -66,80 +66,85 @@ export function prepareScene(
   gltf: GLTFPostprocessedExt,
   atlas: Map<GLTFMaterialPostprocessed, MaterialTextures>,
 ): SceneData {
-  const allTriangles: TriangleCPU[] = [];
-  const allMaterials: MaterialCPU[] = [];
-  const allLights: LightCPU[] = [];
+  try {
+    const allTriangles: TriangleCPU[] = [];
+    const allMaterials: MaterialCPU[] = [];
+    const allLights: LightCPU[] = [];
 
-  // build parent map
-  const parentMap: Map<GLTFNodePostprocessed, GLTFNodePostprocessed> =
-    new Map();
-  for (const node of gltf.nodes) {
-    if (node.children) {
-      for (const child of node.children) {
-        parentMap.set(child, node);
+    // build parent map
+    const parentMap: Map<GLTFNodePostprocessed, GLTFNodePostprocessed> =
+      new Map();
+    for (const node of gltf.nodes) {
+      if (node.children) {
+        for (const child of node.children) {
+          parentMap.set(child, node);
+        }
       }
     }
-  }
 
-  // Calculate world matrices for each node
-  const worldMatrices: Map<GLTFNodePostprocessed, Mat4> = new Map();
-  for (const node of gltf.nodes) {
-    const localMatrix = extractNodeMatrix(node);
-    const worldMatrix = mat4.clone(localMatrix);
+    // Calculate world matrices for each node
+    const worldMatrices: Map<GLTFNodePostprocessed, Mat4> = new Map();
+    for (const node of gltf.nodes) {
+      const localMatrix = extractNodeMatrix(node);
+      const worldMatrix = mat4.clone(localMatrix);
 
-    // Traverse up the parent chain to accumulate transformations
-    let currentNode = node;
-    while (parentMap.has(currentNode)) {
-      const parent = parentMap.get(currentNode)!;
-      const parentMatrix = extractNodeMatrix(parent);
-      mat4.mul(parentMatrix, worldMatrix, worldMatrix);
-      currentNode = parent;
+      // Traverse up the parent chain to accumulate transformations
+      let currentNode = node;
+      while (parentMap.has(currentNode)) {
+        const parent = parentMap.get(currentNode)!;
+        const parentMatrix = extractNodeMatrix(parent);
+        mat4.mul(parentMatrix, worldMatrix, worldMatrix);
+        currentNode = parent;
+      }
+
+      worldMatrices.set(node, worldMatrix);
     }
 
-    worldMatrices.set(node, worldMatrix);
-  }
+    for (const node of gltf.nodes) {
+      processNode(
+        gltf,
+        atlas,
+        node,
+        allTriangles,
+        allMaterials,
+        allLights,
+        worldMatrices.get(node)!,
+      );
+    }
 
-  for (const node of gltf.nodes) {
-    processNode(
-      gltf,
-      atlas,
-      node,
-      allTriangles,
-      allMaterials,
-      allLights,
-      worldMatrices.get(node)!,
-    );
-  }
+    console.log(`${gltf.nodes.length} nodes, ${allTriangles.length} triangles`);
 
-  console.log(`${gltf.nodes.length} nodes, ${allTriangles.length} triangles`);
+    const bvhNodes = buildBVH(allTriangles);
 
-  const bvhNodes = buildBVH(allTriangles);
-
-  // 构建完BVH后，添加emissive light的triangleIndex
-  for (let i = 0; i < allTriangles.length; i++) {
-    const triangle = allTriangles[i];
-    if (triangle.materialIndex >= 0) {
-      const material = allMaterials[triangle.materialIndex];
-      if (vec3.length(material.emission) > 0.0) {
-        // 自发光材质
-        const lightCPU: LightCPU = {
-          position: vec3.create(0.0, 0.0, 0.0),
-          lightType: 0,
-          color: material.emission,
-          intensity: material.emissiveStrength,
-          triangleIndex: i,
-        };
-        allLights.push(lightCPU);
+    // 构建完BVH后，添加emissive light的triangleIndex
+    for (let i = 0; i < allTriangles.length; i++) {
+      const triangle = allTriangles[i];
+      if (triangle.materialIndex >= 0) {
+        const material = allMaterials[triangle.materialIndex];
+        if (vec3.length(material.emission) > 0.0) {
+          // 自发光材质
+          const lightCPU: LightCPU = {
+            position: vec3.create(0.0, 0.0, 0.0),
+            lightType: 0,
+            color: material.emission,
+            intensity: material.emissiveStrength,
+            triangleIndex: i,
+          };
+          allLights.push(lightCPU);
+        }
       }
     }
-  }
 
-  return {
-    triangles: allTriangles,
-    materials: allMaterials,
-    bvhNodes: bvhNodes,
-    lights: allLights,
-  };
+    return {
+      triangles: allTriangles,
+      materials: allMaterials,
+      bvhNodes: bvhNodes,
+      lights: allLights,
+    };
+  } catch (error) {
+    console.error(error);
+    throw error;
+  }
 }
 
 function extractNodeMatrix(node: GLTFNodePostprocessed): Mat4 {
@@ -270,7 +275,7 @@ function processNode(
       const triangles = buildTriangles(
         transformedPosition,
         transformedNormal,
-        uv.value as Float32Array,
+        uv?.value as Float32Array,
         index?.value as Uint16Array,
       );
 
@@ -294,9 +299,10 @@ function buildTriangles(
   uv: Float32Array,
   index: Uint16Array,
 ) {
-  if (index instanceof Uint32Array) {
+  if (!index || index instanceof Uint32Array) {
     throw new Error('Uint32Array is not supported yet');
   }
+  uv = uv ?? new Float32Array(position.length); // default uv (zero)
 
   const triangles: TriangleCPU[] = [];
   if (index) {
