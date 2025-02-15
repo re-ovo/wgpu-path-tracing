@@ -228,9 +228,9 @@ fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
         hit.roughness = max(pbrValue.y * material.roughness, 0.04);
         hit.transmission = material.transmission;
         hit.ior = material.ior;
-        let emissiveValue = getTextureColor(material.emissiveMap, hit.uv, vec4f(0.0));
+        let emissiveValue = getTextureColor(material.emissiveMap, hit.uv, vec4f(1.0));
         hit.emission = emissiveValue.xyz * material.emission;
-        hit.emissiveStrength = emissiveValue.w;
+        hit.emissiveStrength = material.emissiveStrength;
         
         // 采样法线贴图
         let normalMap = getTextureColor(material.normalMap, hit.uv, vec4f(0.5, 0.5, 1.0, 1.0)).xyz;
