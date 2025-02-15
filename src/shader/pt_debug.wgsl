@@ -113,8 +113,8 @@ fn getTextureColor(texture: AtlasTexture, uv: vec2f, fallback: vec4f) -> vec4f {
     
     // 计算纹理在图集中的实际UV坐标
     let atlasUV = vec2f(
-        (f32(texture.x) + uv.x * f32(texture.w)),
-        (f32(texture.y) + uv.y * f32(texture.h))
+        (f32(texture.x) + (uv.x % 1.0) * f32(texture.w)),
+        (f32(texture.y) + (uv.y % 1.0) * f32(texture.h))
     );
     
     // 采样纹理
