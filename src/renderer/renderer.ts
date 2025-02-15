@@ -144,6 +144,8 @@ export class Renderer {
       width: this.context.canvas.width,
       height: this.context.canvas.height,
       frameIndex: 0,
+      focusDistance: 5.0,
+      aperture: 0.001,
     };
   }
 
@@ -534,7 +536,7 @@ export async function setupRenderer(canvas: HTMLCanvasElement) {
     device: device,
     format: 'rgba16float',
     toneMapping: {
-      mode: 'extended',
+      mode: 'standard',
     },
   });
 

@@ -58,6 +58,8 @@ struct Camera {
     width: u32,
     height: u32,
     frameIndex: u32,
+    aperture: f32,      // 光圈大小
+    focusDistance: f32,  // 焦距
 }
 
 struct AABB {
@@ -752,13 +754,31 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     let pixel = vec2f(f32(id.x) + rand(), f32(id.y) + rand());
     let uv = (pixel / vec2f(dims)) * 2.0 - 1.0;
     
-    let rayDir = normalize(
+    // 计算理想光线方向
+    var rayDir = normalize(
         camera.forward +
         uv.x * camera.right * tan(camera.fov * 0.5) * camera.aspect +
         uv.y * camera.up * tan(camera.fov * 0.5)
     );
+
+    var rayOrigin = camera.position;
     
-    let ray = Ray(camera.position, rayDir);
+    // 如果有散焦效果（光圈大小大于0）
+    if (camera.aperture > 0.0) {
+        // 计算焦点位置
+        let focalPoint = camera.position + rayDir * camera.focusDistance;
+        
+        // 在光圈上随机采样一个点
+        let r = sqrt(rand()) * camera.aperture;
+        let theta = rand() * 2.0 * PI;
+        let offset = camera.right * (r * cos(theta)) + camera.up * (r * sin(theta));
+        
+        // 更新光线起点和方向
+        rayOrigin = camera.position + offset;
+        rayDir = normalize(focalPoint - rayOrigin);
+    }
+    
+    let ray = Ray(rayOrigin, rayDir);
     var color = min(trace(ray), vec3f(2.5)); // avoid fireflies, clamp to 2.5
   
     let bufferIndex = id.y * camera.width + id.x;

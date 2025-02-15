@@ -45,6 +45,8 @@ export interface CameraCPU {
   width: number;
   height: number;
   frameIndex: number;
+  aperture: number;
+  focusDistance: number;
 }
 
 export interface LightCPU {
