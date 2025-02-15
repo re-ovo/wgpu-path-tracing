@@ -20,7 +20,7 @@ struct Material {
     albedo: AtlasTexture,
     normal: AtlasTexture,
     pbr: AtlasTexture,
-    emissive: AtlasTexture,
+    emissiveMap: AtlasTexture,
 }
 
 struct Triangle {
@@ -84,10 +84,18 @@ struct HitInfo {
     t: f32, // 距离
     normal: vec3f, // 法线
     materialIndex: u32, // 材质索引
+    albedo: vec3f, // 漫反射颜色
+    alpha: f32, // 透明度
+    roughness: f32, // 粗糙度
+    metallic: f32, // 金属度
+    transmission: f32, // 透射率
+    ior: f32, // 折射率
+    emission: vec3f, // 自发光颜色
+    emissiveStrength: f32, // 自发光强度
     uv: vec2f, // 纹理坐标
     isFront: bool, // 是否正面
 }
-    
+
 // 绑定组
 @group(0) @binding(0) var<storage, read_write> outputBuffer: array<vec3f>;
 @group(0) @binding(1) var<storage> triangles: array<Triangle>;
@@ -211,6 +219,19 @@ fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
         // 获取材质
         let material = materials[hit.materialIndex];
         
+        // 采样纹理并填充材质信息
+        let albedoValue = getTextureColor(material.albedo, hit.uv, vec4f(1.0));
+        hit.albedo = albedoValue.xyz * material.baseColor;
+        hit.alpha = albedoValue.w;
+        let pbrValue = getTextureColor(material.pbr, hit.uv, vec4f(1.0));
+        hit.metallic = pbrValue.z * material.metallic;
+        hit.roughness = max(pbrValue.y * material.roughness, 0.04);
+        hit.transmission = material.transmission;
+        hit.ior = material.ior;
+        let emissiveValue = getTextureColor(material.emissiveMap, hit.uv, vec4f(0.0));
+        hit.emission = emissiveValue.xyz * material.emission;
+        hit.emissiveStrength = emissiveValue.w;
+        
         // 采样法线贴图
         let normalMap = getTextureColor(material.normal, hit.uv, vec4f(0.5, 0.5, 1.0, 1.0)).xyz;
         if (normalMap.x != 0.5 || normalMap.y != 0.5 || normalMap.z != 1.0) {
@@ -219,7 +240,6 @@ fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
             
             // 将切线空间法线转换到世界空间
             let worldNormal = normalize(TBN * tangentNormal);
-
             hit.normal = worldNormal;
         } else {
             hit.normal = interpolatedNormal;
@@ -495,14 +515,14 @@ fn powerHeuristic(nf: f32, fPdf: f32, ng: f32, gPdf: f32) -> f32 {
     return (f * f) / (f * f + g * g);
 }
 
-fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray, front: bool) -> vec3f {
+fn sampleBSDF(hitInfo: HitInfo, currentRay: Ray, front: bool) -> vec3f {
     // 计算视线方向（从表面点指向相机）
     let V = -normalize(currentRay.direction);
     
     // 根据材质属性计算各种BSDF的概率
-    let diffuseProb = (1.0 - material.metallic) * (1.0 - material.transmission);
-    let specularProb = material.metallic;
-    let transmissionProb = (1.0 - material.metallic) * material.transmission;
+    let diffuseProb = (1.0 - hitInfo.metallic) * (1.0 - hitInfo.transmission);
+    let specularProb = hitInfo.metallic;
+    let transmissionProb = (1.0 - hitInfo.metallic) * hitInfo.transmission;
     
     // 随机选择BSDF类型
     let r = rand();
@@ -510,21 +530,21 @@ fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray, front: bool) -
     if (r < diffuseProb) {
         // 漫反射采样 - 使用余弦加权的半球采样
         let localDir = randomCosineDirection();
-        let TBN = constructTBN(normal);
+        let TBN = constructTBN(hitInfo.normal);
         return TBN * localDir;
         
     } else if (r < diffuseProb + specularProb) {
         // 镜面反射采样
-        let roughness = max(material.roughness, 0.04);
-        let N = sampleGGXNormal(normal, roughness);
+        let roughness = max(hitInfo.roughness, 0.04);
+        let N = sampleGGXNormal(hitInfo.normal, roughness);
         return reflect(-V, N);
         
     } else {
         // 透射采样
-        let eta = select(material.ior, 1.0 / material.ior, front);
-        let roughness = max(material.roughness, 0.04);
+        let eta = select(hitInfo.ior, 1.0 / hitInfo.ior, front);
+        let roughness = max(hitInfo.roughness, 0.04);
         
-        var N = sampleGGXNormal(normal, roughness);
+        var N = sampleGGXNormal(hitInfo.normal, roughness);
         N = select(-N, N, front);
         
         let cosTheta = dot(N, V);
@@ -545,16 +565,10 @@ fn sampleBSDF(material: Material, normal: vec3f, currentRay: Ray, front: bool) -
     }
 }
 
-fn evalBSDF(material: Material, hitInfo: HitInfo, normal: vec3f, V: vec3f, L: vec3f, front: bool) -> vec4f {
+fn evalBSDF(hitInfo: HitInfo, normal: vec3f, V: vec3f, L: vec3f, front: bool) -> vec4f {
     // V is view direction (from surface to camera)
     // L is light direction (from surface to light)
     // Returns vec4f(bsdf_value.rgb, pdf)
-
-    let albedo = getTextureColor(material.albedo, hitInfo.uv, vec4f(1.0)).xyz * material.baseColor;
-    let pbr = getTextureColor(material.pbr, hitInfo.uv, vec4f(1.0)).xyz;
-    let metallic = pbr.x * material.metallic;
-    let roughness = max(pbr.y, 0.04);
-    
     let H = normalize(V + L);
     let NdotL = max(dot(normal, L), 0.0);
     let NdotV = max(dot(normal, V), 0.0);
@@ -562,20 +576,20 @@ fn evalBSDF(material: Material, hitInfo: HitInfo, normal: vec3f, V: vec3f, L: ve
     let VdotH = max(dot(V, H), 0.0);
     
     // 计算基础反射率 F0
-    let F0 = mix(vec3f(0.04), albedo, metallic);
+    let F0 = mix(vec3f(0.04), hitInfo.albedo, hitInfo.metallic);
     
     // 计算 Fresnel 项
     let F = fresnelSchlick(VdotH, F0);
     
     // 计算几何项
-    let G = geometrySmith(normal, V, L, roughness);
+    let G = geometrySmith(normal, V, L, hitInfo.roughness);
     
     // 计算法线分布项
-    let D = distributionGGX(normal, H, roughness);
+    let D = distributionGGX(normal, H, hitInfo.roughness);
     
     // 计算漫反射项
-    let kD = (1.0 - F) * (1.0 - metallic);
-    let diffuse = kD * albedo / PI;
+    let kD = (1.0 - F) * (1.0 - hitInfo.transmission);
+    let diffuse = kD * hitInfo.albedo / PI;
     
     // 计算镜面反射项
     let specular = F * G * D / max(4.0 * NdotV * NdotL, EPSILON);
@@ -584,27 +598,27 @@ fn evalBSDF(material: Material, hitInfo: HitInfo, normal: vec3f, V: vec3f, L: ve
     var pdf = 0.0;
     
     // 计算透射项
-    if (material.transmission > 0.0) {
-        let eta = select(material.ior, 1.0 / material.ior, front);
+    if (hitInfo.transmission > 0.0) {
+        let eta = select(hitInfo.ior, 1.0 / hitInfo.ior, front);
         let cosTheta = dot(normal, V);
         let F_transmission = reflectance(abs(cosTheta), eta);
         
         if (front) {
             // 入射
-            bsdf = (1.0 - F_transmission) * albedo;
-            pdf = (1.0 - metallic) * material.transmission;
+            bsdf = (1.0 - F_transmission) * hitInfo.albedo;
+            pdf = (1.0 - hitInfo.metallic) * hitInfo.transmission;
         } else {
             // 出射
-            bsdf = (1.0 - F_transmission) * albedo;
-            pdf = (1.0 - metallic) * material.transmission;
+            bsdf = (1.0 - F_transmission) * hitInfo.albedo;
+            pdf = (1.0 - hitInfo.metallic) * hitInfo.transmission;
         }
     } else {
         // 漫反射和镜面反射的组合
         bsdf = (diffuse + specular) * NdotL;
         
         // 计算 PDF
-        let diffuseProb = (1.0 - metallic) * (1.0 - material.transmission);
-        let specularProb = metallic;
+        let diffuseProb = (1.0 - hitInfo.metallic) * (1.0 - hitInfo.transmission);
+        let specularProb = hitInfo.metallic;
         
         // 漫反射的 PDF (余弦加权)
         let diffusePdf = NdotL / PI;
@@ -654,19 +668,17 @@ fn trace(ray: Ray) -> vec3f {
             break;
         }
 
-        let material = materials[hit.materialIndex];
-
         // 自发光
-        if (any(material.emission > vec3f(0.0))) {
+        if (any(hit.emission > vec3f(0.0))) {
             // 添加基于距离的衰减
             let distance = hit.t;
             let attenuation = 1.0 / (1.0 + distance * distance);
-            result += throughput * material.emission * material.emissiveStrength * attenuation;
+            result += throughput * hit.emission * hit.emissiveStrength * attenuation;
             break;
         }
 
         // 只对非透射表面进行直接光照采样
-        let transmissionProb = (1.0 - material.metallic) * material.transmission;
+        let transmissionProb = (1.0 - hit.metallic) * hit.transmission;
         if (DO_MIS && transmissionProb < 0.9) {  // 如果不是主要透射材质
             let lightSample = sampleLight(currentRay, hit.position);
             if(lightSample.pdf > 0.0) {
@@ -674,7 +686,7 @@ fn trace(ray: Ray) -> vec3f {
                 
                 // 计算BSDF
                 let V = -normalize(currentRay.direction);
-                let evalResult = evalBSDF(material, hit, hit.normal, V, lightSample.wi, hit.isFront);
+                let evalResult = evalBSDF(hit, hit.normal, V, lightSample.wi, hit.isFront);
                 let bsdfValue = evalResult.xyz;
                 let bsdfPdf = evalResult.w;
 
@@ -688,8 +700,8 @@ fn trace(ray: Ray) -> vec3f {
         }
 
         // 间接光照 - BSDF采样
-        let bsdfDir = sampleBSDF(material, hit.normal, currentRay, hit.isFront);
-        let evalResult = evalBSDF(material, hit, hit.normal, -normalize(currentRay.direction), bsdfDir, hit.isFront);
+        let bsdfDir = sampleBSDF(hit, currentRay, hit.isFront);
+        let evalResult = evalBSDF(hit, hit.normal, -normalize(currentRay.direction), bsdfDir, hit.isFront);
         let bsdfValue = evalResult.xyz;
         let bsdfPdf = evalResult.w;
 
@@ -699,7 +711,7 @@ fn trace(ray: Ray) -> vec3f {
 
         // 对于透射材质，需要考虑折射率变化导致的辐射度变化
         if (DO_MIS && transmissionProb > 0.0) {
-            let eta = select(material.ior, 1.0 / material.ior, hit.isFront);
+            let eta = select(hit.ior, 1.0 / hit.ior, hit.isFront);
             throughput *= vec3f(eta * eta);
         }
 

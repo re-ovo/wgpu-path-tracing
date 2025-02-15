@@ -14,6 +14,7 @@ export interface MaterialTextures {
   albedo: AtlasTexture;
   normal: AtlasTexture;
   pbr: AtlasTexture;
+  emissiveMap: AtlasTexture;
 }
 
 // 纹理在atlas中的位置 (0~1)
@@ -32,20 +33,24 @@ export function packing(scene: GLTFPostprocessedExt) {
     const normalTexture = material.normalTexture;
     const albedoTexture = material.pbrMetallicRoughness?.baseColorTexture;
     const pbrTexture = material.pbrMetallicRoughness?.metallicRoughnessTexture;
+    const emissionTexture = material.emissiveTexture;
 
     const normalBox = toBox(normalTexture?.texture);
     const albedoBox = toBox(albedoTexture?.texture);
     const pbrBox = toBox(pbrTexture?.texture);
+    const emissionBox = toBox(emissionTexture?.texture);
 
     materials.set(material, {
       albedo: albedoBox,
       normal: normalBox,
       pbr: pbrBox,
+      emissiveMap: emissionBox,
     });
 
     if (normalBox) boxes.push(normalBox);
     if (albedoBox) boxes.push(albedoBox);
     if (pbrBox) boxes.push(pbrBox);
+    if (emissionBox) boxes.push(emissionBox);
   }
 
   const { w, h } = potpack(boxes);
@@ -137,7 +142,7 @@ function buildCanvas(
   };
 
   for (const [material, textures] of materials.entries()) {
-    const { albedo, normal, pbr } = textures;
+    const { albedo, normal, pbr, emissiveMap } = textures;
     drawTexture(
       albedo,
       material.pbrMetallicRoughness?.baseColorTexture?.texture,
@@ -148,6 +153,7 @@ function buildCanvas(
       pbr,
       material.pbrMetallicRoughness?.metallicRoughnessTexture?.texture,
     );
+    drawTexture(emissiveMap, material.emissiveTexture?.texture);
   }
 
   return canvas;

@@ -44,6 +44,7 @@ struct Material {
     albedo: AtlasTexture,
     normal: AtlasTexture,
     pbr: AtlasTexture,
+    emissiveMap: AtlasTexture,
 }
 
 
@@ -209,8 +210,9 @@ fn rayTriangleIntersect(ray: Ray, triangle: Triangle) -> HitInfo {
         hit.roughness = max(pbrValue.y * material.roughness, 0.04);
         hit.transmission = material.transmission;
         hit.ior = material.ior;
-        hit.emission = material.emission;
-        hit.emissiveStrength = material.emissiveStrength;
+        let emissiveValue = getTextureColor(material.emissiveMap, hit.uv, vec4f(0.0));
+        hit.emission = emissiveValue.xyz * material.emission;
+        hit.emissiveStrength = emissiveValue.w;
 
         // 如果alpha小于1但大于0，直接模拟成玻璃
         if(hit.alpha < 1.0 && hit.alpha > 0.0) {
@@ -331,6 +333,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
         if (hit.isFront) {
             // 正面显示法线颜色
             outputBuffer[bufferIndex] = normalToColor(hit.normal);
+            // outputBuffer[bufferIndex] = hit.emission;
         } else {
             // 背面显示红色
             outputBuffer[bufferIndex] = vec3f(1.0, 0.0, 0.0);

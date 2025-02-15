@@ -18,6 +18,7 @@ export interface MaterialCPU {
   albedo: AtlasTexture;
   normal: AtlasTexture;
   pbr: AtlasTexture;
+  emissiveMap: AtlasTexture;
 }
 
 export interface TriangleCPU {
@@ -365,7 +366,7 @@ function buildMaterial(
       albedo: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
       normal: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
       pbr: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
-      emissive: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+      emissiveMap: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
     };
   }
 
@@ -395,5 +396,11 @@ function buildMaterial(
     albedo: atlas.get(material)?.albedo ?? { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
     normal: atlas.get(material)?.normal ?? { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
     pbr: atlas.get(material)?.pbr ?? { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+    emissiveMap: atlas.get(material)?.emissiveMap ?? {
+      x: 0.0,
+      y: 0.0,
+      w: 0.0,
+      h: 0.0,
+    },
   };
 }

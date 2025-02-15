@@ -539,7 +539,7 @@ export async function setupRenderer(canvas: HTMLCanvasElement) {
   });
 
   const renderer = new Renderer(device, context);
-  await renderer.loadModel('/models/cornell.glb');
+  await renderer.loadModel('/models/lights.glb');
   renderer.start();
 
   // Handle window resize
