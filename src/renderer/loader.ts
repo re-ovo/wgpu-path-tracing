@@ -19,23 +19,22 @@ export async function loadGLTF(url: string): Promise<GLTFPostprocessedExt> {
 export async function loadModel(
   url: string,
 ): Promise<[SceneData, PackedAtlas]> {
-  const gltf = await loadGLTF(url);
-  const atlas = packing(gltf);
 
   const promise = new Promise<[SceneData, PackedAtlas]>((resolve, reject) => {
-    const worker = new SceneWorker();
-
-    // handler message from worker
-    worker.onmessage = (e: MessageEvent) => {
-      const { type, data, error } = e.data;
-      if (type === 'error') {
-        reject(new Error(error));
-        return;
-      }
-      resolve([data, atlas]);
-    };
-
-    worker.postMessage({ gltf, atlas: atlas.materials });
+    const worker = new SceneWorker()
+    loadGLTF(url).then(gltf => {
+      const atlas = packing(gltf);
+      worker.onmessage = (e: MessageEvent) => {
+        const { type, data, error } = e.data;
+        if (type === 'error') {
+          reject(new Error(error));
+          return;
+        }
+        resolve([data, atlas]);
+      };
+  
+      worker.postMessage({ gltf, atlas: atlas.materials });
+    }).catch(reject);
   });
   toast.promise(promise, {
     loading: 'Loading...',
