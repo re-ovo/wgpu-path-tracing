@@ -5,6 +5,10 @@ import {
   GLTFTexturePostprocessed,
 } from '@loaders.gl/gltf';
 
+// 纹理缩放比例
+// 以更低分辨率来构建atlas，可以减少显存占用和atlas大小
+const TEXTURE_PIXEL_RATIO = 0.5;
+
 export interface PackedAtlas {
   texture: OffscreenCanvas;
   materials: Map<GLTFMaterialPostprocessed, MaterialTextures>;
@@ -54,6 +58,7 @@ export function packing(scene: GLTFPostprocessedExt) {
   }
 
   const { w, h } = potpack(boxes);
+  console.log('Atlas size', w, h);
 
   // 构建atlas
   const textureSize = Math.max(
@@ -81,8 +86,8 @@ function toBox(texture?: GLTFTexturePostprocessed): AtlasTexture {
   const width = img?.width ?? 0;
   const height = img?.height ?? 0;
   return {
-    w: width,
-    h: height,
+    w: width * TEXTURE_PIXEL_RATIO,
+    h: height * TEXTURE_PIXEL_RATIO,
     x: 0,
     y: 0,
   };
@@ -107,7 +112,7 @@ function buildCanvas(
     isAlbedo = false,
   ) => {
     if (!material) return;
-    const img = material.source?.image;
+    const img = material.source?.image as unknown as ImageBitmap;
     if (!img) return;
     console.log('draw', img);
 
@@ -117,9 +122,18 @@ function buildCanvas(
       const tempCtx = tempCanvas.getContext('2d');
       if (!tempCtx) return;
 
-      // 绘制原始图像到临时canvas
-      // @ts-expect-error 类型错误
-      tempCtx.drawImage(img, 0, 0, info.w, info.h);
+      // 绘制原始图像到临时canvas，需要考虑缩放
+      tempCtx.drawImage(
+        img,
+        0,
+        0,
+        img.width,
+        img.height, // 源图像的位置和尺寸
+        0,
+        0,
+        info.w,
+        info.h, // 目标位置和尺寸
+      );
 
       // 获取像素数据
       const imageData = tempCtx.getImageData(0, 0, info.w, info.h);
@@ -133,11 +147,21 @@ function buildCanvas(
       }
 
       tempCtx.putImageData(imageData, 0, 0);
-      ctx.drawImage(tempCanvas, info.x, info.y, info.w, info.h);
+      // 将处理后的图像绘制到主canvas
+      ctx.drawImage(tempCanvas, info.x, info.y);
     } else {
-      // 对于非albedo纹理，直接绘制
-      // @ts-expect-error 类型错误
-      ctx.drawImage(img, info.x, info.y, info.w, info.h);
+      // 对于非albedo纹理，直接绘制并缩放
+      ctx.drawImage(
+        img,
+        0,
+        0,
+        img.width,
+        img.height, // 源图像的位置和尺寸
+        info.x,
+        info.y,
+        info.w,
+        info.h, // 目标位置和尺寸
+      );
     }
   };
 
