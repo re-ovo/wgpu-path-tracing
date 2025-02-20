@@ -674,8 +674,7 @@ fn trace(ray: Ray) -> vec3f {
         }
 
         // 只对非透射表面进行直接光照采样
-        let transmissionProb = (1.0 - hit.metallic) * hit.transmission;
-        if (DO_MIS && transmissionProb < 0.9) {  // 如果不是主要透射材质
+        if (DO_MIS && hit.transmission == 0.0 && hit.isFront) {  // 如果不是主要透射材质
             let lightSample = sampleLight(currentRay, hit.position);
             if(lightSample.pdf > 0.0) {
                 // 计算BSDF
@@ -701,12 +700,6 @@ fn trace(ray: Ray) -> vec3f {
 
         if (bsdfPdf <= 0.0) {
             break;
-        }
-
-        // 对于透射材质，需要考虑折射率变化导致的辐射度变化
-        if (DO_MIS && transmissionProb > 0.0) {
-            let eta = select(hit.ior, 1.0 / hit.ior, hit.isFront);
-            throughput *= vec3f(eta * eta);
         }
 
         // 更新光线
