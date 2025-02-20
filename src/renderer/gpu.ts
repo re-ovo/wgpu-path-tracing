@@ -290,7 +290,10 @@ function processNode(
         triangle.materialIndex = allMaterials.length - 1;
       });
 
-      allTriangles.push(...triangles);
+      // 将三角形添加到allTriangles中
+      for (const triangle of triangles) {
+        allTriangles.push(triangle);
+      }
     }
   }
 }
