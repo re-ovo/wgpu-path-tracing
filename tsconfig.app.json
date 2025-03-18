@@ -22,7 +22,7 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
 
-    "types": ["@webgpu/types"]
+    "types": ["@webgpu/types", "wesl-plugin/suffixes"]
   },
   "include": ["src"]
 }

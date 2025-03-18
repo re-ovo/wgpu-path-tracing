@@ -6,7 +6,7 @@ import {
 } from 'webgpu-utils';
 import { mat4, vec3 } from 'wgpu-matrix';
 import blitShaderSource from '../shader/blit.wgsl?raw';
-import ptShaderSource from '../shader/pt.wgsl?raw';
+import ptShaderSource from '../shader/pt.wgsl?static';
 import { WebGPUProfiler } from '../utils/profiler';
 import { PackedAtlas } from './atlas';
 import { Controller } from './controller';

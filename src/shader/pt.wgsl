@@ -1,3 +1,5 @@
+import package::random::{initRNG, rand, randInt};
+
 const PI = 3.14159265359;
 const EPSILON = 1e-6;
 const MAX_BOUNCES = 8;
@@ -106,24 +108,6 @@ struct HitInfo {
 @group(0) @binding(4) var<storage> bvhNodes: array<BVHNode>;
 @group(0) @binding(5) var<storage> lights: array<Light>;
 @group(0) @binding(6) var atlas: texture_2d<f32>;
-
-// 随机数生成
-var<private> rngState: u32;
-
-fn initRNG(pixel: vec2u, frame: u32) {
-    rngState = pixel.x + pixel.y * 1000u + frame * 100000u;
-}
-
-fn rand() -> f32 {
-    rngState = rngState * 747796405u + 2891336453u;
-    var result = ((rngState >> ((rngState >> 28u) + 4u)) ^ rngState) * 277803737u;
-    result = (result >> 22u) ^ result;
-    return f32(result) / 4294967295.0;
-}
-
-fn randInt(min: u32, max: u32) -> u32 {
-    return min + u32(rand() * f32(max - min + 1));
-}
 
 fn getTextureColor(texture: AtlasTexture, uv: vec2f, fallback: vec4f) -> vec4f {
     // 计算纹理在图集中的实际UV坐标
