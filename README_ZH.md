@@ -66,6 +66,7 @@ npm run dev
 
 ## 使用的库
 
+- [wesl-js](https://github.com/wgsl-tooling-wg/wesl-js)
 - [webgpu-utils](https://github.com/greggman/webgpu-utils)
 - [@loaders.gl/gltf](https://www.npmjs.com/package/@loaders.gl/gltf)
 - [potpack](https://github.com/mapbox/potpack)
