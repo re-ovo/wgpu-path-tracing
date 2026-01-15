@@ -1,3 +1,4 @@
-weslFiles = [ "./src/shader/**/*.wgsl" ]
-weslRoot = "./src/shader"
+edition = "unstable_2025"
+include = [ "./src/shader/**/*.w[eg]sl" ]
+root = "./src/shader"
 dependencies = []
